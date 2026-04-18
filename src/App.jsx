@@ -369,94 +369,149 @@ export default function App() {
   return (
     <div style={{ padding: "20px" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        {/* HEADER */}
-        <header style={{ borderBottom: "1px solid var(--border-default)", paddingBottom: "20px", marginBottom: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px", flexWrap: "wrap" }}>
-            <Terminal size={20} color="var(--accent-blue)" />
-            <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>~/interview-prep/web $</span>
-            <span className="cursor" style={{ color: "var(--accent-blue)" }}>▊</span>
+        {/* HEADER — brutalist block */}
+        <header style={{ marginBottom: "32px" }}>
+          {/* top bar: meta + actions */}
+          <div style={{
+            display: "flex",
+            alignItems: "stretch",
+            gap: "0",
+            marginBottom: "20px",
+            flexWrap: "wrap",
+            border: "2px solid var(--border-default)",
+            background: "var(--bg-surface)",
+          }}>
             <div style={{
-              marginLeft: "auto",
+              padding: "10px 16px",
+              borderRight: "2px solid var(--border-default)",
+              background: "var(--brand)",
+              color: "#0a0a0a",
+              fontWeight: 800,
+              fontSize: "12px",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+            }}>
+              ⬛ WEB.DRILL
+            </div>
+            <div style={{
+              padding: "10px 16px",
+              flex: 1,
+              fontSize: "12px",
+              color: "var(--text-muted)",
+              fontFamily: "'JetBrains Mono', monospace",
               display: "flex",
               alignItems: "center",
               gap: "10px",
+              minWidth: 0,
             }}>
-              <div style={{
-                fontSize: "11px",
-                color: saveFlash ? "var(--accent-green)" : "var(--text-faint)",
-                transition: "color 0.3s",
+              <span style={{
+                width: "8px", height: "8px",
+                background: saveFlash ? "var(--accent-green)" : "var(--text-faint)",
+                transition: "background 0.2s",
+              }} />
+              {lastSaved ? `saved ${new Date(lastSaved).toLocaleTimeString()}` : "unsaved"}
+            </div>
+            <button
+              onClick={() => startQuiz(10)}
+              style={{
+                padding: "10px 18px",
+                borderTop: "none",
+                borderBottom: "none",
+                borderRight: "2px solid var(--border-default)",
+                borderLeft: "2px solid var(--border-default)",
+                background: "var(--bg-app)",
+                color: "var(--text-primary)",
+                fontSize: "12px",
+                fontWeight: 800,
+                letterSpacing: "0.1em",
                 display: "flex",
                 alignItems: "center",
-                gap: "6px",
-              }}>
-                <span style={{
-                  width: "6px", height: "6px",
-                  borderRadius: "50%",
-                  background: saveFlash ? "var(--accent-green)" : "var(--text-faint)",
-                  transition: "background 0.3s",
-                }} />
-                {lastSaved ? `saved · ${new Date(lastSaved).toLocaleTimeString()}` : "unsaved"}
-              </div>
-              <button
-                onClick={() => startQuiz(10)}
-                style={{
-                  background: "transparent",
-                  border: "1px solid var(--accent-blue)",
-                  color: "var(--accent-blue)",
-                  padding: "5px 10px",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "5px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                }}
-                aria-label="Start quiz"
-                title="Quiz yourself on 10 random items (weak + bookmarked first)"
-              >
-                <Play size={12} /> Quiz
-              </button>
-              <button
-                onClick={toggleTheme}
-                style={{
-                  background: "transparent",
-                  border: "1px solid var(--border-default)",
-                  color: "var(--text-muted)",
-                  padding: "5px 7px",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                }}
-                aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              >
-                {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-              </button>
-            </div>
+                gap: "8px",
+              }}
+              aria-label="Start quiz"
+              title="Quiz yourself on 10 random items (weak + bookmarked first)"
+            >
+              <Play size={14} fill="currentColor" /> QUIZ
+            </button>
+            <button
+              onClick={toggleTheme}
+              style={{
+                padding: "10px 14px",
+                border: "none",
+                background: "var(--bg-app)",
+                color: "var(--text-primary)",
+                display: "flex",
+                alignItems: "center",
+              }}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
           </div>
-          <h1 style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontSize: "clamp(28px, 5vw, 44px)",
-            fontWeight: 700,
-            margin: "0 0 8px 0",
-            letterSpacing: "-0.02em",
-            background: "linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-red) 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
+
+          {/* TITLE BLOCK — huge, bordered, hard shadow */}
+          <div className="brut-shadow" style={{
+            border: "3px solid var(--border-default)",
+            background: "var(--bg-surface)",
+            padding: "28px 24px",
+            marginBottom: "16px",
           }}>
-            WEB // INTERVIEW DRILL
-          </h1>
-          <div style={{ color: "var(--text-muted)", fontSize: "14px", lineHeight: 1.6 }}>
-            HTTP · Django · FastAPI · Auth · CORS · Security · JS/DOM · React/Vue — trainee to lead, plus the tricky traps.
-            <br />
-            <span style={{ color: "var(--accent-red)" }}>target:</span> full-stack / senior ·{" "}
-            <span style={{ color: "var(--accent-red)" }}>progress:</span> auto-saved in your browser ·{" "}
-            <span style={{ color: "var(--accent-green)" }}>good luck.</span>
+            <h1 style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: "clamp(36px, 7vw, 72px)",
+              fontWeight: 700,
+              margin: "0",
+              letterSpacing: "-0.04em",
+              lineHeight: 0.9,
+              color: "var(--text-primary)",
+              textTransform: "uppercase",
+            }}>
+              WEB <span style={{ color: "var(--brand)" }}>/</span><span style={{ color: "var(--accent-red)" }}>/</span> INTERVIEW
+              <br />
+              <span style={{ color: "var(--accent-red)" }}>DRILL.</span>
+            </h1>
+          </div>
+
+          {/* SUBTITLE — tag-strip */}
+          <div style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0",
+            border: "2px solid var(--border-default)",
+            borderTop: "none",
+            background: "var(--bg-surface-2)",
+          }}>
+            {[
+              "HTTP", "DJANGO", "FASTAPI", "AUTH", "CORS",
+              "SECURITY", "JS/DOM", "REACT/VUE",
+            ].map((tag, i) => (
+              <span key={tag} style={{
+                padding: "8px 14px",
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                color: "var(--text-secondary)",
+                borderRight: i < 7 ? "2px solid var(--border-default)" : "none",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                {tag}
+              </span>
+            ))}
+            <span style={{
+              padding: "8px 14px",
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "var(--bg-app)",
+              background: "var(--brand)",
+              marginLeft: "auto",
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              TRAINEE → LEAD
+            </span>
           </div>
         </header>
 
@@ -468,10 +523,10 @@ export default function App() {
             const total = quiz.ids.length;
             return (
               <div style={{
-                background: "linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-surface-2) 100%)",
+                background: "var(--bg-surface)",
                 border: "1px solid var(--accent-blue)",
                 borderLeft: "3px solid var(--accent-blue)",
-                borderRadius: "8px",
+                borderRadius: "0",
                 padding: "28px",
                 marginBottom: "20px",
               }}>
@@ -496,7 +551,7 @@ export default function App() {
                     <div key={r.k} style={{
                       background: `color-mix(in srgb, ${r.color} 10%, transparent)`,
                       border: `1px solid color-mix(in srgb, ${r.color} 30%, transparent)`,
-                      borderRadius: "6px",
+                      borderRadius: "0",
                       padding: "14px",
                       textAlign: "center",
                     }}>
@@ -520,7 +575,7 @@ export default function App() {
                       color: "var(--bg-app)",
                       border: "1px solid var(--accent-blue)",
                       padding: "7px 14px",
-                      borderRadius: "4px",
+                      borderRadius: "0",
                       cursor: "pointer",
                       fontFamily: "inherit",
                       fontSize: "12px",
@@ -554,9 +609,9 @@ export default function App() {
           return (
             <div style={{
               background: "var(--bg-surface)",
-              border: "1px solid var(--border-default)",
+              border: "2px solid var(--border-default)",
               borderLeft: `3px solid ${lvl.color}`,
-              borderRadius: "6px",
+              borderRadius: "0",
               overflow: "hidden",
               marginBottom: "20px",
             }}>
@@ -566,7 +621,7 @@ export default function App() {
                 alignItems: "center",
                 gap: "10px",
                 padding: "10px 16px",
-                borderBottom: "1px solid var(--border-default)",
+                borderBottom: "2px solid var(--border-default)",
                 flexWrap: "wrap",
               }}>
                 <span style={{
@@ -582,14 +637,14 @@ export default function App() {
                   color: lvl.color,
                   padding: "2px 6px",
                   border: `1px solid ${lvl.color}55`,
-                  borderRadius: "3px",
+                  borderRadius: "0",
                 }}>{lvl.label}</span>
                 <span style={{
                   fontSize: "10px",
                   color: "var(--text-muted)",
                   padding: "2px 6px",
-                  border: "1px solid var(--border-default)",
-                  borderRadius: "3px",
+                  border: "2px solid var(--border-default)",
+                  borderRadius: "0",
                 }}>{TOPICS[q.topic]}</span>
                 <div style={{ marginLeft: "auto", display: "flex", gap: "8px", fontSize: "11px", fontVariantNumeric: "tabular-nums" }}>
                   <span style={{ color: "var(--accent-green)" }}>{quiz.results.easy}↑</span>
@@ -630,7 +685,7 @@ export default function App() {
                         border: `1px solid ${lvl.color}`,
                         color: lvl.color,
                         padding: "10px 28px",
-                        borderRadius: "4px",
+                        borderRadius: "0",
                         cursor: "pointer",
                         fontFamily: "inherit",
                         fontSize: "12px",
@@ -663,7 +718,7 @@ export default function App() {
                       display: "flex",
                       gap: "8px",
                       paddingTop: "16px",
-                      borderTop: "1px solid var(--border-subtle)",
+                      borderTop: "2px solid var(--border-subtle)",
                       flexWrap: "wrap",
                     }}>
                       {["easy", "medium", "hard"].map((c) => {
@@ -679,7 +734,7 @@ export default function App() {
                               border: `1px solid color-mix(in srgb, ${cColor} 55%, transparent)`,
                               color: cColor,
                               padding: "10px 16px",
-                              borderRadius: "4px",
+                              borderRadius: "0",
                               cursor: "pointer",
                               fontFamily: "inherit",
                               fontSize: "12px",
@@ -702,13 +757,13 @@ export default function App() {
 
         {/* INTRO */}
         {!quiz && showIntro && (
-          <div style={{
-            background: "linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-surface-2) 100%)",
-            border: "1px solid var(--border-default)",
-            borderLeft: "3px solid var(--accent-blue)",
-            padding: "16px 20px",
-            borderRadius: "6px",
-            marginBottom: "20px",
+          <div className="brut-shadow" style={{
+            background: "var(--bg-surface)",
+            border: "2px solid var(--border-default)",
+            borderLeft: "8px solid var(--brand)",
+            padding: "20px 24px",
+            borderRadius: "0",
+            marginBottom: "24px",
             fontSize: "13px",
             position: "relative",
           }}>
@@ -759,7 +814,7 @@ export default function App() {
               return (
                 <div key={key} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12px" }}>
                   <div style={{ width: "70px", color: lvl.color, fontWeight: 600, letterSpacing: "0.05em" }}>{lvl.label}</div>
-                  <div style={{ flex: 1, height: "8px", background: "var(--bg-surface)", borderRadius: "4px", overflow: "hidden", border: "1px solid var(--border-default)" }}>
+                  <div style={{ flex: 1, height: "8px", background: "var(--bg-surface)", borderRadius: "0", overflow: "hidden", border: "2px solid var(--border-default)" }}>
                     <div style={{
                       width: `${pct}%`, height: "100%",
                       background: `linear-gradient(90deg, ${lvl.color}aa, ${lvl.color})`,
@@ -818,8 +873,8 @@ export default function App() {
             style={{
               width: "100%",
               background: "var(--bg-surface)",
-              border: "1px solid var(--border-default)",
-              borderRadius: "6px",
+              border: "2px solid var(--border-default)",
+              borderRadius: "0",
               padding: "10px 12px 10px 34px",
               color: "var(--text-primary)",
               fontFamily: "inherit",
@@ -854,7 +909,7 @@ export default function App() {
             ) : (
               <span style={{
                 fontSize: "10px", color: "var(--text-faint)",
-                border: "1px solid var(--border-default)", borderRadius: "3px",
+                border: "2px solid var(--border-default)", borderRadius: "0",
                 padding: "1px 5px", letterSpacing: "0.05em",
               }}>
                 /
@@ -873,8 +928,8 @@ export default function App() {
                   left: 0,
                   right: 0,
                   background: "var(--bg-surface)",
-                  border: "1px solid var(--border-default)",
-                  borderRadius: "6px",
+                  border: "2px solid var(--border-default)",
+                  borderRadius: "0",
                   boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
                   overflow: "hidden",
                   zIndex: 30,
@@ -888,7 +943,7 @@ export default function App() {
                   textTransform: "uppercase",
                   letterSpacing: "0.1em",
                   color: "var(--text-muted)",
-                  borderBottom: "1px solid var(--border-subtle)",
+                  borderBottom: "2px solid var(--border-subtle)",
                   background: "var(--bg-inset)",
                 }}>
                   {filtered.length} match{filtered.length === 1 ? "" : "es"} · ↑↓ to navigate · Enter to open
@@ -924,7 +979,7 @@ export default function App() {
                         width: "100%",
                         textAlign: "left",
                         fontFamily: "inherit",
-                        borderBottom: "1px solid var(--border-subtle)",
+                        borderBottom: "2px solid var(--border-subtle)",
                       }}
                     >
                       <span style={{
@@ -934,7 +989,7 @@ export default function App() {
                         color: lvl.color,
                         padding: "2px 5px",
                         border: `1px solid color-mix(in srgb, ${lvl.color} 40%, transparent)`,
-                        borderRadius: "3px",
+                        borderRadius: "0",
                         background: `color-mix(in srgb, ${lvl.color} 10%, transparent)`,
                         flexShrink: 0,
                         marginTop: "1px",
@@ -968,8 +1023,8 @@ export default function App() {
         {/* CONTROLS */}
         <div style={{
           background: "var(--bg-surface)",
-          border: "1px solid var(--border-default)",
-          borderRadius: "6px",
+          border: "2px solid var(--border-default)",
+          borderRadius: "0",
           padding: "12px 16px",
           marginBottom: "20px",
           display: "flex",
@@ -1051,7 +1106,7 @@ export default function App() {
               display: "inline-flex", alignItems: "center", gap: "6px",
               fontSize: "11px", color: "var(--bg-app)",
               background: "var(--accent-blue)",
-              padding: "3px 10px", borderRadius: "12px",
+              padding: "3px 10px", borderRadius: "0",
               fontWeight: 500,
             }}>
               #{tagFilter}
@@ -1136,10 +1191,10 @@ export default function App() {
                       background: active ? `color-mix(in srgb, ${col} 15%, transparent)` : "transparent",
                       border: active
                         ? `1px solid color-mix(in srgb, ${col} 60%, transparent)`
-                        : "1px solid var(--border-default)",
+                        : "2px solid var(--border-default)",
                       color: active ? col : disabled ? "var(--text-faint)" : "var(--text-muted)",
                       padding: "4px 10px",
-                      borderRadius: "3px",
+                      borderRadius: "0",
                       cursor: disabled ? "not-allowed" : "pointer",
                       opacity: disabled ? 0.5 : 1,
                       fontFamily: "inherit",
@@ -1171,7 +1226,7 @@ export default function App() {
               color: "var(--text-muted)",
               background: "var(--bg-surface)",
               border: "1px dashed var(--border-default)",
-              borderRadius: "6px",
+              borderRadius: "0",
             }}>
               <div style={{ fontSize: "32px", marginBottom: "8px" }}>∅</div>
               No questions match these filters.
@@ -1200,20 +1255,24 @@ export default function App() {
                   <button
                     onClick={toggleLevelCollapse}
                     style={{
-                      marginTop: idx === 0 ? 0 : "16px",
-                      padding: "10px 14px",
-                      background: `color-mix(in srgb, ${lvl.color} 8%, transparent)`,
-                      border: `1px solid color-mix(in srgb, ${lvl.color} 30%, transparent)`,
-                      borderLeft: `3px solid ${lvl.color}`,
-                      borderRadius: "6px",
+                      marginTop: idx === 0 ? 0 : "24px",
+                      padding: "14px 18px",
+                      background: lvl.color,
+                      border: `2px solid var(--border-default)`,
+                      borderLeft: `12px solid var(--border-default)`,
+                      borderRadius: "0",
                       display: "flex",
                       alignItems: "center",
-                      gap: "12px",
+                      gap: "14px",
                       flexWrap: "wrap",
                       cursor: "pointer",
                       width: "100%",
                       textAlign: "left",
                       fontFamily: "inherit",
+                      color: "#0a0a0a",
+                      textTransform: "none",
+                      letterSpacing: "0",
+                      transition: "transform 60ms steps(1)",
                     }}
                     aria-expanded={!isCollapsed}
                     title={isCollapsed ? `Expand ${lvl.label}` : `Collapse ${lvl.label}`}
@@ -1221,42 +1280,47 @@ export default function App() {
                     <span style={{
                       display: "flex",
                       alignItems: "center",
-                      color: lvl.color,
+                      color: "#0a0a0a",
                       flexShrink: 0,
                     }}>
-                      {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                      {isCollapsed ? <ChevronRight size={20} strokeWidth={3} /> : <ChevronDown size={20} strokeWidth={3} />}
                     </span>
                     <span style={{
-                      color: lvl.color,
+                      color: "#0a0a0a",
                       fontFamily: "'Space Grotesk', sans-serif",
-                      fontSize: "15px",
+                      fontSize: "22px",
                       fontWeight: 700,
-                      letterSpacing: "0.08em",
+                      letterSpacing: "-0.01em",
+                      textTransform: "uppercase",
                     }}>
                       {lvl.label}
                     </span>
                     <span style={{
-                      color: "var(--text-muted)",
+                      color: "#0a0a0a",
                       fontSize: "11px",
                       textTransform: "uppercase",
                       letterSpacing: "0.1em",
+                      fontWeight: 700,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      opacity: 0.75,
                     }}>
-                      {levelItems.length} questions · {levelDone}/{levelItems.length} done
-                      {isCollapsed && " · hidden"}
+                      {levelItems.length} Q · {levelDone}/{levelItems.length} DONE
+                      {isCollapsed && " · HIDDEN"}
                     </span>
                     <div style={{
                       flex: 1,
-                      minWidth: "80px",
-                      height: "4px",
-                      background: "var(--bg-inset)",
-                      borderRadius: "2px",
+                      minWidth: "100px",
+                      height: "10px",
+                      background: "rgba(10,10,10,0.2)",
+                      border: "2px solid #0a0a0a",
+                      borderRadius: "0",
                       overflow: "hidden",
                       marginLeft: "auto",
                     }}>
                       <div style={{
                         width: `${levelItems.length ? (levelDone / levelItems.length) * 100 : 0}%`,
                         height: "100%",
-                        background: lvl.color,
+                        background: "#0a0a0a",
                         transition: "width 0.2s",
                       }} />
                     </div>
@@ -1292,13 +1356,13 @@ export default function App() {
         </div>
 
         {/* FINAL TIPS */}
-        <div style={{
-          marginTop: "32px",
-          padding: "20px",
-          background: "linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-surface-2) 100%)",
-          border: "1px solid var(--border-default)",
-          borderLeft: "3px solid var(--accent-red)",
-          borderRadius: "6px",
+        <div className="brut-shadow" style={{
+          marginTop: "40px",
+          padding: "24px 28px",
+          background: "var(--bg-surface)",
+          border: "3px solid var(--border-default)",
+          borderLeft: "8px solid var(--accent-red)",
+          borderRadius: "0",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
             <Target size={16} color="var(--accent-red)" />
@@ -1320,24 +1384,42 @@ export default function App() {
         </>}
 
         <footer style={{
-          marginTop: "24px",
-          padding: "16px 0",
-          borderTop: "1px solid var(--border-subtle)",
-          color: "var(--text-faint)",
+          marginTop: "40px",
+          padding: "20px 24px",
+          border: "2px solid var(--border-default)",
+          borderTop: "8px solid var(--border-default)",
+          color: "var(--text-muted)",
           fontSize: "11px",
           textAlign: "center",
+          fontFamily: "'JetBrains Mono', monospace",
+          background: "var(--bg-surface)",
+          letterSpacing: "0.05em",
+          textTransform: "uppercase",
+          fontWeight: 600,
         }}>
-          {QUESTIONS.length} questions · {Object.keys(LEVELS).length} levels · {Object.keys(TOPICS).length} topics
+          {QUESTIONS.length} QUESTIONS · {Object.keys(LEVELS).length} LEVELS · {Object.keys(TOPICS).length} TOPICS
           <br />
-          <span className="cursor">▊</span> Created by{" "}
-          <span style={{ color: "var(--text-secondary)" }}>Andrei</span> ·{" "}
+          <span style={{
+            display: "inline-block",
+            width: "8px", height: "8px",
+            background: "var(--brand)",
+            marginRight: "6px",
+            verticalAlign: "middle",
+          }} /> CREATED BY{" "}
+          <span style={{ color: "var(--text-primary)" }}>ANDREI</span> ·{" "}
           <a
             href="https://t.me/Suslicke"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "var(--accent-blue)", textDecoration: "none" }}
+            style={{
+              color: "var(--bg-app)",
+              background: "var(--brand)",
+              padding: "2px 8px",
+              textDecoration: "none",
+              fontWeight: 700,
+            }}
           >
-            @Suslicke
+            @SUSLICKE
           </a>
         </footer>
       </div>
@@ -1356,9 +1438,9 @@ export default function App() {
             maxWidth: "560px",
             margin: "0 auto",
             background: "var(--bg-surface)",
-            border: "1px solid var(--border-default)",
+            border: "2px solid var(--border-default)",
             borderLeft: "3px solid var(--accent-blue)",
-            borderRadius: "6px",
+            borderRadius: "0",
             boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
             padding: "14px 16px",
             zIndex: 50,
@@ -1371,7 +1453,7 @@ export default function App() {
             flexShrink: 0,
             width: "32px",
             height: "32px",
-            borderRadius: "4px",
+            borderRadius: "0",
             background: "color-mix(in srgb, var(--accent-blue) 12%, transparent)",
             display: "flex",
             alignItems: "center",
@@ -1395,7 +1477,7 @@ export default function App() {
                   color: "var(--bg-app)",
                   border: "1px solid var(--accent-blue)",
                   padding: "5px 12px",
-                  borderRadius: "3px",
+                  borderRadius: "0",
                   cursor: "pointer",
                   fontFamily: "inherit",
                   fontSize: "11px",
@@ -1411,9 +1493,9 @@ export default function App() {
                 style={{
                   background: "transparent",
                   color: "var(--text-muted)",
-                  border: "1px solid var(--border-default)",
+                  border: "2px solid var(--border-default)",
                   padding: "5px 12px",
-                  borderRadius: "3px",
+                  borderRadius: "0",
                   cursor: "pointer",
                   fontFamily: "inherit",
                   fontSize: "11px",
@@ -1451,7 +1533,7 @@ function highlight(text, needle) {
       <mark
         key={key++}
         className="search-hit"
-        style={{ background: "color-mix(in srgb, var(--accent-blue) 28%, transparent)", color: "inherit", padding: "0 2px", borderRadius: "2px" }}
+        style={{ background: "color-mix(in srgb, var(--accent-blue) 28%, transparent)", color: "inherit", padding: "0 2px", borderRadius: "0" }}
       >
         {text.slice(hit, hit + n.length)}
       </mark>
@@ -1476,13 +1558,14 @@ function QuestionCard({
       className="card-enter"
       style={{
         background: "var(--bg-surface)",
-        border: `1px solid ${isExpanded ? lvl.color + "66" : "var(--border-default)"}`,
-        borderLeft: `3px solid ${lvl.color}`,
-        borderRadius: "6px",
+        border: `2px solid ${isExpanded ? lvl.color : "var(--border-default)"}`,
+        borderLeft: `8px solid ${lvl.color}`,
+        borderRadius: "0",
         scrollMarginTop: "80px",
         overflow: "hidden",
-        opacity: isDone ? 0.6 : 1,
-        transition: "all 0.2s",
+        opacity: isDone ? 0.55 : 1,
+        transition: "border-color 60ms steps(1)",
+        boxShadow: isExpanded ? `4px 4px 0 ${lvl.color}` : "none",
       }}
     >
       <div
@@ -1506,7 +1589,7 @@ function QuestionCard({
           style={{
             background: isDone ? lvl.color : "transparent",
             border: `1.5px solid ${isDone ? lvl.color : "var(--text-faint)"}`,
-            borderRadius: "3px",
+            borderRadius: "0",
             width: "18px", height: "18px",
             cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -1525,14 +1608,14 @@ function QuestionCard({
               fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em",
               color: lvl.color, padding: "2px 6px",
               border: `1px solid ${lvl.color}55`,
-              borderRadius: "3px",
+              borderRadius: "0",
               background: `${lvl.color}15`,
             }}>{lvl.label}</span>
             <span style={{
               fontSize: "10px", color: "var(--text-muted)",
               padding: "2px 6px",
-              border: "1px solid var(--border-default)",
-              borderRadius: "3px",
+              border: "2px solid var(--border-default)",
+              borderRadius: "0",
             }}>{TOPICS[q.topic]}</span>
             {q.level === "tricky" && (
               <span style={{ fontSize: "10px", color: "var(--accent-red)", display: "flex", alignItems: "center", gap: "3px" }}>
@@ -1544,7 +1627,7 @@ function QuestionCard({
                 fontSize: "10px",
                 color: conf === "easy" ? "var(--accent-green)" : conf === "medium" ? "var(--accent-amber)" : "var(--accent-red)",
                 padding: "2px 6px",
-                borderRadius: "3px",
+                borderRadius: "0",
                 background: "var(--bg-app)",
               }}>{conf}</span>
             )}
@@ -1583,7 +1666,7 @@ function QuestionCard({
       </div>
 
       {isExpanded && (
-        <div style={{ padding: "0 16px 16px 62px", borderTop: "1px solid var(--border-subtle)" }}>
+        <div style={{ padding: "0 16px 16px 62px", borderTop: "2px solid var(--border-subtle)" }}>
           {!showAnswer ? (
             <div style={{ padding: "24px 0", textAlign: "center" }}>
               <div style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "12px" }}>
@@ -1596,7 +1679,7 @@ function QuestionCard({
                   border: `1px solid ${lvl.color}`,
                   color: lvl.color,
                   padding: "8px 20px",
-                  borderRadius: "4px",
+                  borderRadius: "0",
                   cursor: "pointer",
                   fontFamily: "inherit",
                   fontSize: "12px",
@@ -1638,7 +1721,7 @@ function QuestionCard({
                           color: isActive ? "var(--bg-app)" : "var(--accent-blue)",
                           background: isActive ? "var(--accent-blue)" : "var(--bg-app)",
                           border: "1px solid color-mix(in srgb, var(--accent-blue) 40%, transparent)",
-                          borderRadius: "10px",
+                          borderRadius: "0",
                           padding: "2px 8px",
                           cursor: "pointer",
                           fontFamily: "inherit",
@@ -1655,7 +1738,7 @@ function QuestionCard({
               <div style={{
                 marginTop: "14px",
                 paddingTop: "14px",
-                borderTop: "1px solid var(--border-subtle)",
+                borderTop: "2px solid var(--border-subtle)",
                 display: "flex",
                 alignItems: "center",
                 gap: "10px",
@@ -1676,7 +1759,7 @@ function QuestionCard({
                         border: `1px solid ${active ? cColor : "var(--border-default)"}`,
                         color: active ? cColor : "var(--text-muted)",
                         padding: "4px 12px",
-                        borderRadius: "3px",
+                        borderRadius: "0",
                         cursor: "pointer",
                         fontFamily: "inherit",
                         fontSize: "11px",
@@ -1720,71 +1803,99 @@ function QuestionCard({
 // ============== HELPERS ==============
 const selectStyle = {
   background: "var(--bg-app)",
-  color: "var(--text-secondary)",
-  border: "1px solid var(--border-default)",
-  borderRadius: "4px",
-  padding: "5px 8px",
-  fontFamily: "inherit",
-  fontSize: "12px",
+  color: "var(--text-primary)",
+  border: "2px solid var(--border-default)",
+  borderRadius: "0",
+  padding: "7px 10px",
+  fontFamily: "'JetBrains Mono', monospace",
+  fontSize: "11px",
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
   cursor: "pointer",
 };
 
 const toggleLabelStyle = {
   display: "flex",
   alignItems: "center",
-  gap: "6px",
-  color: "var(--text-muted)",
-  fontSize: "12px",
+  gap: "8px",
+  color: "var(--text-secondary)",
+  fontSize: "11px",
+  fontFamily: "'JetBrains Mono', monospace",
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
   cursor: "pointer",
   userSelect: "none",
+  padding: "6px 10px",
+  border: "2px solid var(--border-default)",
+  background: "var(--bg-app)",
 };
 
 const btnStyle = {
-  background: "transparent",
-  border: "1px solid var(--border-default)",
-  color: "var(--text-muted)",
-  padding: "5px 10px",
-  borderRadius: "4px",
+  background: "var(--bg-app)",
+  border: "2px solid var(--border-default)",
+  color: "var(--text-primary)",
+  padding: "7px 12px",
+  borderRadius: "0",
   cursor: "pointer",
-  fontFamily: "inherit",
+  fontFamily: "'JetBrains Mono', monospace",
   fontSize: "11px",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
   display: "flex",
   alignItems: "center",
-  gap: "4px",
+  gap: "6px",
 };
 
 function StatCard({ label, value, accent, sub, icon }) {
   return (
     <div style={{
       background: "var(--bg-surface)",
-      border: "1px solid var(--border-default)",
-      borderTop: `2px solid ${accent}`,
-      borderRadius: "4px",
-      padding: "12px 14px",
+      border: "2px solid var(--border-default)",
+      borderTop: `8px solid ${accent}`,
+      borderRadius: "0",
+      padding: "16px 18px",
+      boxShadow: `4px 4px 0 ${accent}`,
     }}>
       <div style={{
         fontSize: "10px",
         color: "var(--text-muted)",
         textTransform: "uppercase",
-        letterSpacing: "0.1em",
-        marginBottom: "6px",
+        letterSpacing: "0.15em",
+        marginBottom: "10px",
         display: "flex",
         alignItems: "center",
-        gap: "4px",
+        gap: "6px",
+        fontWeight: 700,
+        fontFamily: "'JetBrains Mono', monospace",
       }}>
         {icon}{label}
       </div>
       <div style={{
         fontFamily: "'Space Grotesk', sans-serif",
-        fontSize: "28px",
+        fontSize: "44px",
         fontWeight: 700,
-        color: accent,
-        lineHeight: 1,
+        color: "var(--text-primary)",
+        lineHeight: 0.9,
         fontVariantNumeric: "tabular-nums",
+        letterSpacing: "-0.04em",
       }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>{sub}</div>}
+      {sub && (
+        <div style={{
+          fontSize: "10px",
+          color: "var(--text-muted)",
+          marginTop: "8px",
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+          fontWeight: 600,
+        }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

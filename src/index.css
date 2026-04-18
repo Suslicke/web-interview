@@ -1,51 +1,68 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 * {
   box-sizing: border-box;
 }
 
-/* ============== THEME VARIABLES ============== */
+/* ============== BRUTALIST THEME — DARK FIRST ============== */
 
 :root {
-  /* Dark palette — default */
-  --bg-app: #0d1117;
-  --bg-surface: #161b22;
-  --bg-surface-2: #1c2128;
-  --bg-inset: #0d1117;
-  --border-default: #30363d;
-  --border-subtle: #21262d;
-  --text-primary: #e6edf3;
-  --text-secondary: #c9d1d9;
-  --text-muted: #7d8590;
-  --text-faint: #484f58;
-  --accent-blue: #58a6ff;
-  --accent-green: #7dd3a0;
-  --accent-amber: #d4a574;
-  --accent-red: #e84855;
-  --accent-orange: #e89a7e;
-  --accent-light-blue: #7dc8e8;
-  --accent-pink: #c97b9e;
+  /* surfaces */
+  --bg-app: #0a0a0a;
+  --bg-surface: #141414;
+  --bg-surface-2: #1c1c1c;
+  --bg-inset: #050505;
+
+  /* hard borders — brutalist signature */
+  --border-default: #fafafa;       /* primary white border */
+  --border-subtle: #2a2a2a;        /* internal dividers */
+
+  /* type */
+  --text-primary: #fafafa;
+  --text-secondary: #d4d4d4;
+  --text-muted: #888888;
+  --text-faint: #4a4a4a;
+
+  /* electric accents — max saturation */
+  --accent-blue:        #00d4ff;   /* electric cyan */
+  --accent-green:       #39ff14;   /* electric lime */
+  --accent-amber:       #fff200;   /* electric yellow */
+  --accent-red:         #ff003c;   /* hot red */
+  --accent-orange:      #ff7a00;   /* electric orange */
+  --accent-light-blue:  #00ffea;   /* mint cyan */
+  --accent-pink:        #ff00aa;   /* magenta */
+
+  /* brand accent — used as the dominant hue */
+  --brand: #fff200;                /* electric yellow */
+
   color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --bg-app: #fafafa;
+  /* paper-brutalism */
+  --bg-app: #f5f0e6;
   --bg-surface: #ffffff;
-  --bg-surface-2: #f4f4f5;
-  --bg-inset: #f4f4f5;
-  --border-default: #e4e4e7;
-  --border-subtle: #f4f4f5;
-  --text-primary: #18181b;
-  --text-secondary: #27272a;
-  --text-muted: #52525b;
-  --text-faint: #a1a1aa;
-  --accent-blue: #0969da;
-  --accent-green: #16a34a;
-  --accent-amber: #b45309;
-  --accent-red: #dc2626;
-  --accent-orange: #c2410c;
-  --accent-light-blue: #0891b2;
-  --accent-pink: #be185d;
+  --bg-surface-2: #ebe6dc;
+  --bg-inset: #e0dccf;
+
+  --border-default: #0a0a0a;
+  --border-subtle: #d4cfbf;
+
+  --text-primary: #0a0a0a;
+  --text-secondary: #1a1a1a;
+  --text-muted: #5a5a5a;
+  --text-faint: #9a9a9a;
+
+  --accent-blue:        #0066ff;
+  --accent-green:       #007a30;
+  --accent-amber:       #c47a00;
+  --accent-red:         #d10028;
+  --accent-orange:      #c45200;
+  --accent-light-blue:  #006666;
+  --accent-pink:        #b8008a;
+
+  --brand: #ffd900;
+
   color-scheme: light;
 }
 
@@ -57,69 +74,108 @@ html, body, #root {
 }
 
 body {
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background 120ms ease, color 120ms ease;
 }
+
+/* ============== BRUTALIST SCROLLBAR — chunky white block ============== */
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--bg-surface);
+  background: var(--bg-app);
+  border-left: 2px solid var(--border-default);
 }
-
 ::-webkit-scrollbar-thumb {
   background: var(--border-default);
-  border-radius: 4px;
+  border: 2px solid var(--bg-app);
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-faint);
+  background: var(--brand);
 }
 
-@keyframes blink {
-  50% { opacity: 0; }
-}
+/* ============== ANIMATIONS — sharp, no soft slides ============== */
 
-.cursor {
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes snapIn {
+  0%   { opacity: 0; transform: translate(-3px, -3px); }
+  100% { opacity: 1; transform: translate(0, 0); }
 }
 
 .card-enter {
-  animation: slideIn 0.2s ease-out;
+  animation: snapIn 0.12s steps(2, end);
+}
+
+@keyframes brutPulse {
+  0%, 100% { box-shadow: 4px 4px 0 var(--border-default); }
+  50%      { box-shadow: 6px 6px 0 var(--brand); }
+}
+
+/* ============== FORM ELEMENTS — brutalist primitives ============== */
+
+button, input, select {
+  font-family: inherit;
+  border-radius: 0;
+}
+
+button {
+  cursor: pointer;
+  border: 2px solid var(--border-default);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: transform 60ms steps(1), background 60ms steps(1), color 60ms steps(1);
+}
+
+button:hover {
+  background: var(--brand);
+  color: #0a0a0a;
+}
+
+button:active {
+  transform: translate(2px, 2px);
+}
+
+select, input[type="text"], input[type="search"] {
+  background: var(--bg-app);
+  border: 2px solid var(--border-default);
+  color: var(--text-primary);
+  font-weight: 500;
+  border-radius: 0;
+}
+
+select:focus, button:focus, input:focus {
+  outline: 3px solid var(--brand);
+  outline-offset: 0;
 }
 
 details summary::-webkit-details-marker {
   display: none;
 }
 
-button {
-  font-family: inherit;
+/* ============== UTILITY: BRUTALIST CARD WITH HARD-SHADOW ============== */
+
+.brut-shadow {
+  box-shadow: 4px 4px 0 var(--border-default);
+}
+.brut-shadow-lg {
+  box-shadow: 6px 6px 0 var(--border-default);
+}
+.brut-shadow-brand {
+  box-shadow: 4px 4px 0 var(--brand);
 }
 
-select:focus, button:focus, input:focus {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-  opacity: 0.9;
-}
+/* ============== SEARCH HIGHLIGHT — yellow marker ============== */
 
 mark.search-hit {
-  background: rgba(88, 166, 255, 0.25);
-  color: inherit;
-  padding: 0 2px;
-  border-radius: 2px;
-}
-
-[data-theme="light"] mark.search-hit {
-  background: rgba(9, 105, 218, 0.2);
+  background: var(--brand);
+  color: #0a0a0a;
+  padding: 0 3px;
+  font-weight: 700;
+  border-radius: 0;
 }

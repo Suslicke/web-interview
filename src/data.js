@@ -1,12 +1,12 @@
 // ============== CONFIGURATION ==============
 
 export const LEVELS = {
-  trainee: { label: "TRAINEE", color: "#7dd3a0", order: 1 },
-  junior:  { label: "JUNIOR",  color: "#7dc8e8", order: 2 },
-  middle:  { label: "MIDDLE",  color: "#d4a574", order: 3 },
-  senior:  { label: "SENIOR",  color: "#e89a7e", order: 4 },
-  lead:    { label: "LEAD",    color: "#c97b9e", order: 5 },
-  tricky:  { label: "TRICKY",  color: "#e84855", order: 6 },
+  trainee: { label: "TRAINEE", color: "#39ff14", order: 1 }, // electric lime
+  junior:  { label: "JUNIOR",  color: "#00d4ff", order: 2 }, // electric cyan
+  middle:  { label: "MIDDLE",  color: "#fff200", order: 3 }, // electric yellow
+  senior:  { label: "SENIOR",  color: "#ff7a00", order: 4 }, // electric orange
+  lead:    { label: "LEAD",    color: "#ff00aa", order: 5 }, // magenta
+  tricky:  { label: "TRICKY",  color: "#ff003c", order: 6 }, // hot red
 };
 
 export const TOPICS = {
