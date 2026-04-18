@@ -1,0 +1,21 @@
+{
+  "name": "web-interview-prep",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Interactive interview prep — Web, Django, FastAPI, Auth, CORS, Security, Front-end (JS/DOM/React/Vue). Trainee to Lead.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^0.383.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^7.3.2"
+  }
+}

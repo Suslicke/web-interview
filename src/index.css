@@ -1,0 +1,125 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@400;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+/* ============== THEME VARIABLES ============== */
+
+:root {
+  /* Dark palette — default */
+  --bg-app: #0d1117;
+  --bg-surface: #161b22;
+  --bg-surface-2: #1c2128;
+  --bg-inset: #0d1117;
+  --border-default: #30363d;
+  --border-subtle: #21262d;
+  --text-primary: #e6edf3;
+  --text-secondary: #c9d1d9;
+  --text-muted: #7d8590;
+  --text-faint: #484f58;
+  --accent-blue: #58a6ff;
+  --accent-green: #7dd3a0;
+  --accent-amber: #d4a574;
+  --accent-red: #e84855;
+  --accent-orange: #e89a7e;
+  --accent-light-blue: #7dc8e8;
+  --accent-pink: #c97b9e;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg-app: #fafafa;
+  --bg-surface: #ffffff;
+  --bg-surface-2: #f4f4f5;
+  --bg-inset: #f4f4f5;
+  --border-default: #e4e4e7;
+  --border-subtle: #f4f4f5;
+  --text-primary: #18181b;
+  --text-secondary: #27272a;
+  --text-muted: #52525b;
+  --text-faint: #a1a1aa;
+  --accent-blue: #0969da;
+  --accent-green: #16a34a;
+  --accent-amber: #b45309;
+  --accent-red: #dc2626;
+  --accent-orange: #c2410c;
+  --accent-light-blue: #0891b2;
+  --accent-pink: #be185d;
+  color-scheme: light;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: var(--bg-app);
+}
+
+body {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.cursor {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card-enter {
+  animation: slideIn 0.2s ease-out;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+select:focus, button:focus, input:focus {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  opacity: 0.9;
+}
+
+mark.search-hit {
+  background: rgba(88, 166, 255, 0.25);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+[data-theme="light"] mark.search-hit {
+  background: rgba(9, 105, 218, 0.2);
+}
