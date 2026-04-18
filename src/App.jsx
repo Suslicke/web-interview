@@ -66,7 +66,7 @@ const defaultState = {
   xp: 0,
   streak: 0,
   lastStudiedDate: null,
-  theme: "light",
+  theme: "dark",
 };
 
 function loadState() {
@@ -102,9 +102,10 @@ export default function App() {
   const [streak, setStreak] = useState(initial.streak);
   const [lastStudiedDate, setLastStudiedDate] = useState(initial.lastStudiedDate);
 
-  const [theme, setTheme] = useState(initial.theme || "light");
+  const [theme, setTheme] = useState(initial.theme || "dark");
   const [tab, setTab] = useState("learn");           // learn | stats | settings
-  const [study, setStudy] = useState(null);          // { topicKey | "all" | "review" | "bookmarked", ids, idx }
+  const [study, setStudy] = useState(null);          // { kind, key, ids, idx, ... }
+  const [read, setRead]   = useState(null);          // { kind, key, ids } — lecture mode, no interaction
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -154,6 +155,23 @@ export default function App() {
 
   const endSession = () => setStudy(null);
 
+  // ============== READ (LECTURE) MODE ==============
+  const startReading = useCallback((kind, key) => {
+    let pool = [];
+    if (kind === "topic")        pool = QUESTIONS.filter(q => q.topic === key);
+    else if (kind === "level")   pool = QUESTIONS.filter(q => q.level === key);
+    else if (kind === "bookmarks") pool = QUESTIONS.filter(q => bookmarked.has(q.id));
+    else if (kind === "all")     pool = [...QUESTIONS];
+    if (pool.length === 0) return;
+    // Order by level then by id, so reading flows trainee → lead naturally.
+    pool.sort((a, b) => LEVELS[a.level].order - LEVELS[b.level].order || a.id - b.id);
+    setRead({ kind, key, ids: pool.map(q => q.id) });
+    trackEvent("read_start", { kind, key, count: pool.length });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [bookmarked]);
+
+  const endReading = () => setRead(null);
+
   const recordAnswer = useCallback((rating) => {
     if (!study) return;
     const id = study.ids[study.idx];
@@ -199,6 +217,17 @@ export default function App() {
   }, [completed, confidence]);
 
   // ============== RENDER ==============
+  if (read) {
+    return (
+      <ReadScreen
+        read={read}
+        bookmarked={bookmarked}
+        onToggleBookmark={toggleBookmark}
+        onExit={endReading}
+      />
+    );
+  }
+
   if (study) {
     return (
       <StudyScreen
@@ -225,6 +254,7 @@ export default function App() {
           bookmarked={bookmarked}
           confidence={confidence}
           onStart={startSession}
+          onRead={startReading}
         />
       )}
       {tab === "stats" && (
@@ -413,9 +443,22 @@ const iconBtnStyle = {
   color: "var(--text-secondary)",
 };
 
+const readBtnStyle = {
+  width: "44px",
+  height: "44px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: "var(--radius-pill)",
+  background: "var(--bg-soft)",
+  color: "var(--text-secondary)",
+  flexShrink: 0,
+  transition: "background 160ms, color 160ms",
+};
+
 // ============== HOME SCREEN ==============
 
-function HomeScreen({ stats, bookmarked, confidence, onStart }) {
+function HomeScreen({ stats, bookmarked, confidence, onStart, onRead }) {
   const overallPct = stats.total ? Math.round((stats.done / stats.total) * 100) : 0;
   const hardCount = Object.values(confidence).filter(c => c === "hard").length;
 
@@ -464,7 +507,22 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
               boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
             }}
           >
-            <ArrowRight size={16} /> Quick start (random)
+            <ArrowRight size={16} /> Quick study
+          </button>
+          <button
+            onClick={() => onRead("all")}
+            style={{
+              background: "rgba(255,255,255,0.18)",
+              color: "#fff",
+              padding: "12px 18px",
+              borderRadius: "var(--radius-pill)",
+              fontSize: "14px",
+              fontWeight: 700,
+              display: "inline-flex", alignItems: "center", gap: "8px",
+              backdropFilter: "blur(10px)",
+            }}
+          >
+            <BookOpen size={16} /> Read as lectures
           </button>
           {hardCount > 0 && (
             <button
@@ -493,11 +551,10 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
           const s = stats.byLevel[k];
           const pct = s.total ? (s.done / s.total) * 100 : 0;
           const colorVar = `var(--level-${k})`;
+          const disabled = s.total === 0;
           return (
-            <button
+            <div
               key={k}
-              onClick={() => onStart("level", k)}
-              disabled={s.total === 0}
               style={{
                 background: "var(--bg-card)",
                 borderRadius: "var(--radius-lg)",
@@ -506,11 +563,11 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
                 display: "flex",
                 alignItems: "center",
                 gap: "16px",
-                textAlign: "left",
-                opacity: s.total === 0 ? 0.45 : 1,
+                opacity: disabled ? 0.45 : 1,
                 transition: "transform 120ms, box-shadow 120ms",
               }}
               onMouseEnter={(e) => {
+                if (disabled) return;
                 e.currentTarget.style.transform = "translateY(-2px)";
                 e.currentTarget.style.boxShadow = "var(--shadow-md)";
               }}
@@ -519,26 +576,49 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
                 e.currentTarget.style.boxShadow = "var(--shadow-sm)";
               }}
             >
-              <LevelMedal lvl={k} done={s.done} total={s.total} colorVar={colorVar} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "2px" }}>
-                  {lvl.label.charAt(0) + lvl.label.slice(1).toLowerCase()}
+              <button
+                onClick={() => onStart("level", k)}
+                disabled={disabled}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "16px",
+                  flex: 1,
+                  minWidth: 0,
+                  textAlign: "left",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
+                title={disabled ? "" : `Study ${lvl.label}`}
+              >
+                <LevelMedal lvl={k} done={s.done} total={s.total} colorVar={colorVar} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "2px" }}>
+                    {lvl.label.charAt(0) + lvl.label.slice(1).toLowerCase()}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
+                    {s.done} of {s.total} mastered
+                  </div>
+                  <div style={{ height: "6px", background: "var(--bg-inset)", borderRadius: "var(--radius-pill)", overflow: "hidden" }}>
+                    <div style={{
+                      width: `${pct}%`,
+                      height: "100%",
+                      background: colorVar,
+                      borderRadius: "var(--radius-pill)",
+                      transition: "width 320ms",
+                    }} />
+                  </div>
                 </div>
-                <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
-                  {s.done} of {s.total} mastered
-                </div>
-                <div style={{ height: "6px", background: "var(--bg-inset)", borderRadius: "var(--radius-pill)", overflow: "hidden" }}>
-                  <div style={{
-                    width: `${pct}%`,
-                    height: "100%",
-                    background: colorVar,
-                    borderRadius: "var(--radius-pill)",
-                    transition: "width 320ms",
-                  }} />
-                </div>
-              </div>
-              <ChevronLeft size={18} style={{ color: "var(--text-faint)", transform: "rotate(180deg)" }} />
-            </button>
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRead("level", k); }}
+                disabled={disabled}
+                style={readBtnStyle}
+                title={`Read ${lvl.label} as lectures`}
+                aria-label={`Read ${lvl.label} as lectures`}
+              >
+                <BookOpen size={16} />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -573,11 +653,10 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
           const hue = TOPIC_HUES[k] || "#5765f2";
           const s = stats.byTopic[k];
           const pct = s.total ? (s.done / s.total) * 100 : 0;
+          const disabled = s.total === 0;
           return (
-            <button
+            <div
               key={k}
-              onClick={() => onStart("topic", k)}
-              disabled={s.total === 0}
               style={{
                 background: "var(--bg-card)",
                 borderRadius: "var(--radius-lg)",
@@ -585,17 +664,15 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
                 boxShadow: "var(--shadow-sm)",
                 display: "flex",
                 flexDirection: "column",
-                alignItems: "flex-start",
+                alignItems: "stretch",
                 gap: "10px",
-                textAlign: "left",
                 position: "relative",
-                opacity: s.total === 0 ? 0.4 : 1,
+                opacity: disabled ? 0.4 : 1,
                 transition: "transform 120ms, box-shadow 120ms",
-                cursor: s.total === 0 ? "not-allowed" : "pointer",
                 minHeight: "120px",
               }}
               onMouseEnter={(e) => {
-                if (s.total === 0) return;
+                if (disabled) return;
                 e.currentTarget.style.transform = "translateY(-3px)";
                 e.currentTarget.style.boxShadow = "var(--shadow-md)";
               }}
@@ -604,23 +681,60 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
                 e.currentTarget.style.boxShadow = "var(--shadow-sm)";
               }}
             >
-              <div style={{
-                width: "40px", height: "40px",
-                borderRadius: "12px",
-                background: `${hue}22`,
-                color: hue,
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <Icon size={20} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.25 }}>
-                  {label}
+              {/* Read mini-button — top-right corner */}
+              <button
+                onClick={() => onRead("topic", k)}
+                disabled={disabled}
+                style={{
+                  position: "absolute",
+                  top: "10px", right: "10px",
+                  width: "28px", height: "28px",
+                  borderRadius: "var(--radius-pill)",
+                  background: "var(--bg-soft)",
+                  color: "var(--text-muted)",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  zIndex: 2,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
+                title={`Read ${label} as lectures`}
+                aria-label={`Read ${label} as lectures`}
+              >
+                <BookOpen size={14} />
+              </button>
+
+              <button
+                onClick={() => onStart("topic", k)}
+                disabled={disabled}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  flex: 1,
+                  textAlign: "left",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
+                title={disabled ? "" : `Study ${label}`}
+              >
+                <div style={{
+                  width: "40px", height: "40px",
+                  borderRadius: "12px",
+                  background: `${hue}22`,
+                  color: hue,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <Icon size={20} />
                 </div>
-                <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px", fontWeight: 600 }}>
-                  {s.done} / {s.total}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.25, paddingRight: "30px" }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px", fontWeight: 600 }}>
+                    {s.done} / {s.total}
+                  </div>
                 </div>
-              </div>
+              </button>
+
               <div style={{
                 position: "absolute",
                 left: "14px", right: "14px", bottom: "12px",
@@ -631,7 +745,7 @@ function HomeScreen({ stats, bookmarked, confidence, onStart }) {
               }}>
                 <div style={{ width: `${pct}%`, height: "100%", background: hue, transition: "width 320ms" }} />
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -931,6 +1045,246 @@ function StudyScreen({ study, bookmarked, onAnswer, onToggleBookmark, onExit }) 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============== READ (LECTURE) SCREEN ==============
+
+function ReadScreen({ read, bookmarked, onToggleBookmark, onExit }) {
+  const items = read.ids.map(id => QUESTIONS.find(q => q.id === id)).filter(Boolean);
+  const scrollRef = useRef(null);
+  const [progress, setProgress] = useState(0);
+  const [fontScale, setFontScale] = useState(1);
+
+  // Esc to close
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onExit(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onExit]);
+
+  // Track scroll progress
+  useEffect(() => {
+    const onScroll = () => {
+      const h = document.documentElement;
+      const pct = h.scrollHeight - h.clientHeight;
+      setProgress(pct > 0 ? Math.min(100, (h.scrollTop / pct) * 100) : 0);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [items.length]);
+
+  const title = useMemo(() => {
+    if (read.kind === "topic")     return TOPICS[read.key];
+    if (read.kind === "level")     return `${LEVELS[read.key].label} questions`;
+    if (read.kind === "bookmarks") return "Bookmarked";
+    return "All questions";
+  }, [read.kind, read.key]);
+
+  const scopeColor = read.kind === "level"
+    ? `var(--level-${read.key})`
+    : (TOPIC_HUES[read.key] || "var(--brand)");
+
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--bg-app)" }}>
+      {/* TOP READING BAR */}
+      <header style={{
+        position: "sticky", top: 0, zIndex: 30,
+        background: "var(--bg-app)",
+        borderBottom: "1px solid var(--bg-inset)",
+      }}>
+        <div style={{
+          maxWidth: "720px", margin: "0 auto",
+          padding: "14px 20px",
+          display: "flex", alignItems: "center", gap: "12px",
+        }}>
+          <button onClick={onExit} style={iconBtnStyle} aria-label="Close reading">
+            <X size={18} />
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "1px" }}>
+              Reading
+            </div>
+            <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {title} · {items.length} {items.length === 1 ? "topic" : "topics"}
+            </div>
+          </div>
+          {/* Font size toggle */}
+          <button
+            onClick={() => setFontScale(s => s === 1 ? 1.15 : s === 1.15 ? 1.3 : 1)}
+            style={iconBtnStyle}
+            aria-label="Change font size"
+            title={`Font size ${Math.round(fontScale * 100)}%`}
+          >
+            <span style={{ fontWeight: 800, fontSize: "13px" }}>A</span>
+          </button>
+        </div>
+        {/* Progress bar */}
+        <div style={{
+          height: "3px",
+          background: "var(--bg-inset)",
+        }}>
+          <div style={{
+            width: `${progress}%`,
+            height: "100%",
+            background: scopeColor,
+            transition: "width 80ms linear",
+          }} />
+        </div>
+      </header>
+
+      {/* HERO */}
+      <div style={{
+        maxWidth: "720px", margin: "0 auto",
+        padding: "32px 20px 8px",
+      }}>
+        <div style={{
+          fontSize: "12px", color: "var(--text-muted)", fontWeight: 700,
+          textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px",
+        }}>
+          Lecture mode
+        </div>
+        <h1 style={{
+          fontSize: "clamp(28px, 5vw, 40px)",
+          fontWeight: 800,
+          letterSpacing: "-0.025em",
+          margin: "0 0 8px",
+          color: "var(--text-primary)",
+          lineHeight: 1.1,
+        }}>
+          {title}
+        </h1>
+        <div style={{ color: "var(--text-muted)", fontSize: "14px", marginBottom: "8px" }}>
+          Read everything top to bottom — no quizzing, no rating. Just absorb.
+        </div>
+      </div>
+
+      {/* QUESTION/ANSWER LIST */}
+      <main
+        ref={scrollRef}
+        style={{
+          maxWidth: "720px", margin: "0 auto",
+          padding: "20px 20px 80px",
+          fontSize: `${fontScale}rem`,
+        }}
+      >
+        {items.map((q, i) => {
+          const lvl = LEVELS[q.level];
+          const Icon = TOPIC_ICONS[q.topic] || Globe;
+          const hue = TOPIC_HUES[q.topic] || "#5765f2";
+          const isBookmarked = bookmarked.has(q.id);
+          return (
+            <article
+              key={q.id}
+              id={`read-${q.id}`}
+              style={{
+                background: "var(--bg-card)",
+                borderRadius: "var(--radius-xl)",
+                padding: "24px 24px 20px",
+                marginBottom: "16px",
+                boxShadow: "var(--shadow-sm)",
+                scrollMarginTop: "80px",
+              }}
+            >
+              {/* meta row */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: "10px",
+                marginBottom: "14px",
+                flexWrap: "wrap",
+              }}>
+                <span style={{
+                  fontSize: "11px", fontWeight: 800,
+                  color: "var(--text-faint)",
+                  fontVariantNumeric: "tabular-nums",
+                  letterSpacing: "0.05em",
+                }}>
+                  {String(i + 1).padStart(2, "0")} / {String(items.length).padStart(2, "0")}
+                </span>
+                <Chip color={`var(--level-${q.level})`}>{lvl.label}</Chip>
+                <Chip color={hue}>
+                  <Icon size={11} style={{ marginRight: "4px", verticalAlign: "-1px" }} />
+                  {TOPICS[q.topic]}
+                </Chip>
+                <button
+                  onClick={() => onToggleBookmark(q.id)}
+                  style={{
+                    marginLeft: "auto",
+                    width: "30px", height: "30px",
+                    borderRadius: "var(--radius-pill)",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    background: "transparent",
+                    color: isBookmarked ? "#f7b955" : "var(--text-muted)",
+                  }}
+                  aria-label={isBookmarked ? "Remove bookmark" : "Bookmark"}
+                  title={isBookmarked ? "Remove bookmark" : "Bookmark"}
+                >
+                  <Star size={16} fill={isBookmarked ? "#f7b955" : "transparent"} />
+                </button>
+              </div>
+
+              {/* question */}
+              <h2 style={{
+                fontSize: "1.25em",
+                fontWeight: 800,
+                color: "var(--text-primary)",
+                letterSpacing: "-0.015em",
+                lineHeight: 1.3,
+                margin: "0 0 14px",
+              }}>
+                {q.q}
+              </h2>
+
+              {/* answer body */}
+              <div style={{
+                color: "var(--text-secondary)",
+                fontSize: "0.95em",
+                lineHeight: 1.75,
+                whiteSpace: "pre-wrap",
+              }}>
+                {q.a}
+              </div>
+
+              {/* keywords */}
+              {q.keywords?.length > 0 && (
+                <div style={{
+                  display: "flex", flexWrap: "wrap", gap: "6px",
+                  marginTop: "16px",
+                  paddingTop: "16px",
+                  borderTop: "1px solid var(--bg-inset)",
+                }}>
+                  {q.keywords.map(kw => (
+                    <span key={kw} style={tagStyle}>#{kw}</span>
+                  ))}
+                </div>
+              )}
+            </article>
+          );
+        })}
+
+        {/* End-of-reading footer */}
+        <div style={{
+          textAlign: "center",
+          padding: "32px 20px",
+          color: "var(--text-muted)",
+        }}>
+          <div style={{ fontSize: "32px", marginBottom: "8px" }}>📖</div>
+          <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "16px" }}>
+            That's everything. Nice read.
+          </div>
+          <button
+            onClick={onExit}
+            style={{
+              ...primaryBtnStyle,
+              padding: "12px 28px",
+              fontSize: "14px",
+            }}
+          >
+            <Check size={16} style={{ marginRight: "8px" }} /> Back to home
+          </button>
+        </div>
+      </main>
     </div>
   );
 }
