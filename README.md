@@ -48,17 +48,42 @@ npm install
 npm run dev      # http://localhost:5174
 npm run build    # static dist/ ready to host anywhere
 npm run preview  # preview the production build
+npm run deploy   # build + wrangler deploy to Cloudflare Workers
 ```
 
-## Deploy
+## Deploy to Cloudflare Workers
 
-It's a static SPA — drop `dist/` on any host:
+The repo is wired up for Cloudflare Workers via `wrangler.jsonc`:
 
-- Netlify / Vercel / Cloudflare Pages — connect the repo, build cmd `npm run build`, publish dir `dist`.
-- GitHub Pages — `npm run build` then push `dist/` to `gh-pages` branch.
-- Any nginx/Caddy serving static files.
+```jsonc
+{
+  "name": "web-interview",
+  "compatibility_date": "2025-04-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
+```
 
-To enable Google Analytics, set `VITE_GA_ID=G-XXXXX` at build time. Without it, the analytics module is a no-op (no network calls, no consent banner).
+`single-page-application` makes Workers serve `index.html` for any unknown route — required for client-side routing.
+
+First time:
+
+```bash
+npx wrangler login          # one-time browser auth
+npm run deploy              # build + push to Workers
+```
+
+The Worker name (`web-interview`) becomes the subdomain: `https://web-interview.<your-account>.workers.dev`. Add a custom domain via the Cloudflare dashboard.
+
+### Other hosts
+
+It's a static SPA — `dist/` works on Netlify, Vercel, Cloudflare Pages, GitHub Pages, or any nginx/Caddy. The Workers config is just the one used here.
+
+### Analytics (optional)
+
+Set `VITE_GA_ID=G-XXXXX` in `.env.production` (or as a build-time env var) to enable Google Analytics with Consent Mode v2. Without it, the analytics module is a no-op (no network calls, no consent banner).
 
 ## File map
 
