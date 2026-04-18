@@ -67,6 +67,7 @@ const defaultState = {
   streak: 0,
   lastStudiedDate: null,
   theme: "dark",
+  username: "",
 };
 
 function loadState() {
@@ -103,6 +104,7 @@ export default function App() {
   const [lastStudiedDate, setLastStudiedDate] = useState(initial.lastStudiedDate);
 
   const [theme, setTheme] = useState(initial.theme || "dark");
+  const [username, setUsername] = useState(initial.username || "");
   const [tab, setTab] = useState("learn");           // learn | stats | settings
   const [study, setStudy] = useState(null);          // { kind, key, ids, idx, ... }
   const [read, setRead]   = useState(null);          // { kind, key, ids } — lecture mode, no interaction
@@ -120,9 +122,15 @@ export default function App() {
       completed: [...completed],
       bookmarked: [...bookmarked],
       confidence,
-      xp, streak, lastStudiedDate, theme,
+      xp, streak, lastStudiedDate, theme, username,
     });
-  }, [completed, bookmarked, confidence, xp, streak, lastStudiedDate, theme]);
+  }, [completed, bookmarked, confidence, xp, streak, lastStudiedDate, theme, username]);
+
+  // Forward username to analytics whenever it changes (debounced).
+  useEffect(() => {
+    const t = setTimeout(() => setAnalyticsUser(username), 400);
+    return () => clearTimeout(t);
+  }, [username]);
 
   // ============== STREAK BOOKKEEPING ==============
   const bumpStreak = useCallback(() => {
@@ -246,6 +254,7 @@ export default function App() {
       onTabChange={setTab}
       streak={streak}
       xp={xp}
+      username={username}
       onSearchOpen={() => setSearchOpen(true)}
     >
       {tab === "learn" && (
@@ -253,6 +262,7 @@ export default function App() {
           stats={stats}
           bookmarked={bookmarked}
           confidence={confidence}
+          username={username}
           onStart={startSession}
           onRead={startReading}
         />
@@ -264,6 +274,8 @@ export default function App() {
         <SettingsScreen
           theme={theme}
           onThemeChange={setTheme}
+          username={username}
+          onUsernameChange={setUsername}
           onResetProgress={() => {
             if (window.confirm("Reset all progress? This wipes XP, streak, ratings, bookmarks.")) {
               setCompleted(new Set());
@@ -296,7 +308,7 @@ export default function App() {
 
 // ============== APP SHELL (header + bottom nav) ==============
 
-function AppShell({ tab, onTabChange, streak, xp, onSearchOpen, children }) {
+function AppShell({ tab, onTabChange, streak, xp, username, onSearchOpen, children }) {
   return (
     <div style={{
       minHeight: "100vh",
@@ -347,6 +359,24 @@ function AppShell({ tab, onTabChange, streak, xp, onSearchOpen, children }) {
           >
             <Search size={18} />
           </button>
+          {username && (
+            <div
+              title={username}
+              style={{
+                width: "36px", height: "36px",
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #5765f2 0%, #8b5cf6 100%)",
+                color: "#fff",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                fontSize: "14px", fontWeight: 800,
+                letterSpacing: "-0.02em",
+                boxShadow: "var(--shadow-sm)",
+                userSelect: "none",
+              }}
+            >
+              {username.charAt(0).toUpperCase()}
+            </div>
+          )}
         </div>
       </header>
 
@@ -458,9 +488,12 @@ const readBtnStyle = {
 
 // ============== HOME SCREEN ==============
 
-function HomeScreen({ stats, bookmarked, confidence, onStart, onRead }) {
+function HomeScreen({ stats, bookmarked, confidence, username, onStart, onRead }) {
   const overallPct = stats.total ? Math.round((stats.done / stats.total) * 100) : 0;
   const hardCount = Object.values(confidence).filter(c => c === "hard").length;
+  const greeting = username
+    ? (stats.done === 0 ? `Welcome, ${username} 👋` : `Hi, ${username}`)
+    : (stats.done === 0 ? "Welcome 👋" : "Keep going");
 
   return (
     <div className="animate-fade">
@@ -483,7 +516,7 @@ function HomeScreen({ stats, bookmarked, confidence, onStart, onRead }) {
           borderRadius: "50%",
         }} />
         <div style={{ fontSize: "13px", opacity: 0.9, fontWeight: 600, marginBottom: "8px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-          {stats.done === 0 ? "Welcome 👋" : "Keep going"}
+          {greeting}
         </div>
         <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2, marginBottom: "16px" }}>
           {stats.done === 0
@@ -1676,9 +1709,107 @@ function ProgressRing({ value, max }) {
 
 // ============== SETTINGS SCREEN ==============
 
-function SettingsScreen({ theme, onThemeChange, onResetProgress }) {
+function SettingsScreen({ theme, onThemeChange, username, onUsernameChange, onResetProgress }) {
+  const [draft, setDraft] = useState(username);
+  // Keep local input in sync if username is changed elsewhere (e.g. reset).
+  useEffect(() => { setDraft(username); }, [username]);
+
+  const initial = (username || "?").charAt(0).toUpperCase();
+  const dirty = draft.trim() !== username.trim();
+
+  const commit = () => {
+    const clean = draft.trim().slice(0, 32);
+    setDraft(clean);
+    onUsernameChange(clean);
+  };
+
   return (
     <div className="animate-fade">
+      {/* PROFILE / USERNAME */}
+      <SectionTitle>Profile</SectionTitle>
+      <div style={{
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-lg)",
+        padding: "20px",
+        boxShadow: "var(--shadow-sm)",
+        marginBottom: "20px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+          <div style={{
+            width: "52px", height: "52px",
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #5765f2 0%, #8b5cf6 100%)",
+            color: "#fff",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontSize: "22px", fontWeight: 800,
+            letterSpacing: "-0.02em",
+            boxShadow: "var(--shadow-brand)",
+          }}>
+            {initial}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)" }}>
+              {username || "Anonymous"}
+            </div>
+            <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
+              Used for personal greeting and (if enabled) analytics.
+            </div>
+          </div>
+        </div>
+
+        <label style={{
+          display: "block",
+          fontSize: "11px", fontWeight: 700,
+          color: "var(--text-muted)",
+          textTransform: "uppercase", letterSpacing: "0.06em",
+          marginBottom: "8px",
+        }}>
+          Display name
+        </label>
+
+        <div style={{ display: "flex", gap: "8px" }}>
+          <input
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === "Enter") { commit(); e.currentTarget.blur(); } }}
+            placeholder="e.g. Andrei"
+            maxLength={32}
+            autoComplete="off"
+            spellCheck={false}
+            style={{
+              flex: 1,
+              background: "var(--bg-soft)",
+              borderRadius: "var(--radius-md)",
+              padding: "12px 14px",
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              border: "2px solid transparent",
+              transition: "border-color 160ms",
+            }}
+            onFocus={(e) => e.currentTarget.style.borderColor = "var(--brand)"}
+            onBlurCapture={(e) => e.currentTarget.style.borderColor = "transparent"}
+          />
+          {dirty && (
+            <button
+              onClick={commit}
+              style={{
+                ...primaryBtnStyle,
+                padding: "10px 18px",
+                fontSize: "13px",
+              }}
+            >
+              <Check size={14} style={{ marginRight: "6px" }} /> Save
+            </button>
+          )}
+        </div>
+        <div style={{ fontSize: "11px", color: "var(--text-faint)", marginTop: "8px" }}>
+          Saved in your browser only. Max 32 characters.
+        </div>
+      </div>
+
       <SectionTitle>Appearance</SectionTitle>
       <div style={{
         background: "var(--bg-card)",
