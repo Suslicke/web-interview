@@ -473,6 +473,35 @@ const iconBtnStyle = {
   color: "var(--text-secondary)",
 };
 
+function ToggleSwitch({ on }) {
+  return (
+    <div
+      role="switch"
+      aria-checked={on}
+      style={{
+        width: "44px",
+        height: "26px",
+        background: on ? "var(--brand)" : "var(--bg-inset)",
+        borderRadius: "var(--radius-pill)",
+        position: "relative",
+        flexShrink: 0,
+        transition: "background 200ms ease",
+      }}
+    >
+      <span style={{
+        position: "absolute",
+        top: "3px",
+        left: on ? "21px" : "3px",
+        width: "20px", height: "20px",
+        background: "#fff",
+        borderRadius: "50%",
+        boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+        transition: "left 200ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+      }} />
+    </div>
+  );
+}
+
 const readBtnStyle = {
   width: "44px",
   height: "44px",
@@ -1714,6 +1743,18 @@ function SettingsScreen({ theme, onThemeChange, username, onUsernameChange, onRe
   // Keep local input in sync if username is changed elsewhere (e.g. reset).
   useEffect(() => { setDraft(username); }, [username]);
 
+  // Analytics opt-out (defaults to ON / granted unless user has opted out).
+  const [analyticsOn, setAnalyticsOn] = useState(() => {
+    try { return localStorage.getItem("web-analytics") !== "denied"; } catch { return true; }
+  });
+  const gaConfigured = !!import.meta.env.VITE_GA_ID;
+  const updateAnalytics = (on) => {
+    setAnalyticsOn(on);
+    try { localStorage.setItem("web-analytics", on ? "granted" : "denied"); } catch { /* ignore */ }
+    setAnalyticsConsent(on ? "granted" : "denied");
+    trackEvent(on ? "analytics_opt_in" : "analytics_opt_out");
+  };
+
   const initial = (username || "?").charAt(0).toUpperCase();
   const dirty = draft.trim() !== username.trim();
 
@@ -1846,6 +1887,40 @@ function SettingsScreen({ theme, onThemeChange, username, onUsernameChange, onRe
           );
         })}
       </div>
+
+      {/* PRIVACY */}
+      {gaConfigured && (
+        <>
+          <SectionTitle>Privacy</SectionTitle>
+          <button
+            onClick={() => updateAnalytics(!analyticsOn)}
+            style={{
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius-lg)",
+              padding: "16px 18px",
+              boxShadow: "var(--shadow-sm)",
+              display: "flex",
+              alignItems: "center",
+              gap: "14px",
+              width: "100%",
+              textAlign: "left",
+              marginBottom: "20px",
+              cursor: "pointer",
+            }}
+            aria-pressed={analyticsOn}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "2px" }}>
+                Anonymous analytics
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                Helps me see which questions are popular. No ads, no personal data sold. You can turn it off here.
+              </div>
+            </div>
+            <ToggleSwitch on={analyticsOn} />
+          </button>
+        </>
+      )}
 
       <SectionTitle>About</SectionTitle>
       <div style={{

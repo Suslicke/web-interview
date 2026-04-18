@@ -1,7 +1,14 @@
 // Dynamically load Google Analytics when VITE_GA_ID is set at build time.
+// Consent default reads from localStorage("web-analytics") — granted unless
+// the user has explicitly opted out via Settings.
 export function initAnalytics() {
   const id = import.meta.env.VITE_GA_ID;
   if (!id) return false;
+
+  let savedConsent = "granted";
+  try {
+    if (localStorage.getItem("web-analytics") === "denied") savedConsent = "denied";
+  } catch { /* ignore */ }
 
   window.dataLayer = window.dataLayer || [];
   window.gtag = function gtag() {
@@ -12,8 +19,8 @@ export function initAnalytics() {
     ad_storage: "denied",
     ad_user_data: "denied",
     ad_personalization: "denied",
-    analytics_storage: "denied",
-    wait_for_update: 500,
+    analytics_storage: savedConsent,
+    wait_for_update: 0,
   });
   window.gtag("js", new Date());
   window.gtag("config", id, { anonymize_ip: true });
