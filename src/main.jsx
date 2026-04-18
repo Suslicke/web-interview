@@ -4,14 +4,14 @@ import App from './App.jsx';
 import './index.css';
 import { initAnalytics } from './analytics.js';
 
-// Apply saved theme BEFORE React renders — prevents a flash of the wrong theme.
+// Apply saved theme BEFORE React renders — prevents flash of wrong theme.
 (() => {
   try {
     const saved = localStorage.getItem('web-theme');
-    const theme = saved === 'light' ? 'light' : 'dark';
+    const theme = saved === 'dark' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', theme);
   } catch {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 

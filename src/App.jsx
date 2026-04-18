@@ -1,1511 +1,932 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
-  ChevronDown, ChevronRight, Check, X, Zap, AlertTriangle, Flame,
-  Eye, EyeOff, RotateCcw, Filter, Target, Terminal, Download, Upload,
-  Search, Sun, Moon, User, Cookie, Play,
+  Globe, Code2, Lock, ShieldCheck, Shuffle, ShieldAlert, Cookie,
+  Server, Zap, Layers, Braces, FileCode, Atom, Triangle, Palette,
+  Gauge, Radio, TestTube, Rocket,
+  ChevronLeft, X, ArrowRight, Star, Search, Sun, Moon,
+  Flame, Trophy, BookOpen, BarChart3, Settings as SettingsIcon,
+  Check, RotateCcw, Sparkles, Eye,
 } from "lucide-react";
 import { LEVELS, TOPICS, QUESTIONS } from "./data.js";
 import { trackEvent, setAnalyticsConsent, setAnalyticsUser } from "./analytics.js";
 
-// ============== PERSISTENCE ==============
-const STORAGE_KEY = "web-interview-prep:v1";
+// ============== ICONS PER TOPIC ==============
+const TOPIC_ICONS = {
+  http: Globe,
+  rest: Code2,
+  auth: Lock,
+  authz: ShieldCheck,
+  cors: Shuffle,
+  security: ShieldAlert,
+  cookies: Cookie,
+  django: Server,
+  fastapi: Zap,
+  middleware: Layers,
+  js: Braces,
+  dom: FileCode,
+  react: Atom,
+  vue: Triangle,
+  css: Palette,
+  perf: Gauge,
+  realtime: Radio,
+  testing: TestTube,
+  deploy: Rocket,
+};
+
+// Each topic gets a hue so the home grid feels colorful and scannable.
+const TOPIC_HUES = {
+  http:       "#5765f2",
+  rest:       "#4dbfff",
+  auth:       "#f86464",
+  authz:      "#34c77b",
+  cors:       "#8b5cf6",
+  security:   "#ef4444",
+  cookies:    "#f7b955",
+  django:     "#0c4b33",
+  fastapi:    "#009688",
+  middleware: "#6366f1",
+  js:         "#facc15",
+  dom:        "#fb7185",
+  react:      "#61dafb",
+  vue:        "#42b883",
+  css:        "#3b82f6",
+  perf:       "#10b981",
+  realtime:   "#a855f7",
+  testing:    "#f97316",
+  deploy:     "#0ea5e9",
+};
+
+// ============== STATE PERSISTENCE ==============
+const STORAGE_KEY = "web-drill:v2";
 
 const defaultState = {
-  completed: [],      // array of ids (serializable)
+  completed: [],
   bookmarked: [],
-  revealed: [],
-  confidence: {},     // { [id]: 'easy' | 'medium' | 'hard' }
-  levelFilter: "all",
-  topicFilter: "all",
-  hideCompleted: false,
-  blindMode: false,
-  showIntro: true,
-  lastSaved: null,
+  confidence: {},   // { id: 'easy'|'medium'|'hard' }
+  xp: 0,
+  streak: 0,
+  lastStudiedDate: null,
+  theme: "light",
 };
 
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState;
-    const parsed = JSON.parse(raw);
-    // merge with defaults in case new fields appear in future versions
-    return { ...defaultState, ...parsed };
-  } catch (e) {
-    console.warn("Failed to load saved state, starting fresh:", e);
+    return { ...defaultState, ...JSON.parse(raw) };
+  } catch {
     return defaultState;
   }
 }
 
-function saveState(state) {
+function saveState(s) {
   try {
-    const payload = { ...state, lastSaved: new Date().toISOString() };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
     return true;
-  } catch (e) {
-    console.error("Failed to save state:", e);
+  } catch {
     return false;
   }
 }
 
-// ============== APP ==============
-export default function App() {
-  // init once from localStorage
-  const [initial] = useState(() => loadState());
+// XP awarded per confidence level
+const XP_FOR = { easy: 10, medium: 7, hard: 4 };
 
-  const [expandedId, setExpandedId] = useState(null);
-  const [quiz, setQuiz] = useState(null); // { ids, idx, results: {easy,medium,hard} }
-  const [ratingFilter, setRatingFilter] = useState("all"); // all|bookmarked|easy|medium|hard|unrated
-  const [tagFilter, setTagFilter] = useState(null); // single keyword string
-  const [collapsedLevels, setCollapsedLevels] = useState(() => new Set()); // Set of level keys that are collapsed
-  const [suggestFocused, setSuggestFocused] = useState(false);
-  const [suggestIdx, setSuggestIdx] = useState(-1);
+// ============== APP ==============
+
+export default function App() {
+  const [initial] = useState(() => loadState());
   const [completed, setCompleted] = useState(new Set(initial.completed));
   const [bookmarked, setBookmarked] = useState(new Set(initial.bookmarked));
-  const [revealed, setRevealed] = useState(new Set(initial.revealed));
-  const [confidence, setConfidence] = useState(initial.confidence || {});
-  const [levelFilter, setLevelFilter] = useState(initial.levelFilter);
-  const [topicFilter, setTopicFilter] = useState(initial.topicFilter);
-  const [hideCompleted, setHideCompleted] = useState(initial.hideCompleted);
-  const [blindMode, setBlindMode] = useState(initial.blindMode);
-  const [showIntro, setShowIntro] = useState(initial.showIntro);
-  const [lastSaved, setLastSaved] = useState(initial.lastSaved);
-  const [saveFlash, setSaveFlash] = useState(false);
+  const [confidence, setConfidence] = useState(initial.confidence);
+  const [xp, setXp] = useState(initial.xp);
+  const [streak, setStreak] = useState(initial.streak);
+  const [lastStudiedDate, setLastStudiedDate] = useState(initial.lastStudiedDate);
 
-  // ============== NEW FEATURES ==============
+  const [theme, setTheme] = useState(initial.theme || "light");
+  const [tab, setTab] = useState("learn");           // learn | stats | settings
+  const [study, setStudy] = useState(null);          // { topicKey | "all" | "review" | "bookmarked", ids, idx }
+  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [username, setUsername] = useState("");
-  const [consent, setConsent] = useState(() =>
-    import.meta.env.VITE_GA_ID ? "pending" : "denied"
-  );
-  const [theme, setTheme] = useState(() => {
-    if (typeof document === "undefined") return "dark";
-    return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
-  });
-  const searchRef = useRef(null);
 
-  // Load username + consent on mount
+  // Apply theme + persist
   useEffect(() => {
-    try {
-      const n = localStorage.getItem("web-username");
-      if (n) { setUsername(n); setAnalyticsUser(n); }
-      const c = localStorage.getItem("web-ga-consent");
-      if (c === "granted" || c === "denied") {
-        setConsent(c);
-        setAnalyticsConsent(c);
-      }
-    } catch {
-      /* ignore */
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("web-theme", theme); } catch { /* ignore */ }
+  }, [theme]);
+
+  useEffect(() => {
+    saveState({
+      completed: [...completed],
+      bookmarked: [...bookmarked],
+      confidence,
+      xp, streak, lastStudiedDate, theme,
+    });
+  }, [completed, bookmarked, confidence, xp, streak, lastStudiedDate, theme]);
+
+  // ============== STREAK BOOKKEEPING ==============
+  const bumpStreak = useCallback(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (lastStudiedDate === today) return;
+    const yest = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    setStreak(s => (lastStudiedDate === yest ? s + 1 : 1));
+    setLastStudiedDate(today);
+  }, [lastStudiedDate]);
+
+  // ============== STUDY SESSION CONTROL ==============
+  const startSession = useCallback((kind, key) => {
+    let pool = [];
+    if (kind === "topic")       pool = QUESTIONS.filter(q => q.topic === key);
+    else if (kind === "level")  pool = QUESTIONS.filter(q => q.level === key);
+    else if (kind === "review") pool = QUESTIONS.filter(q => confidence[q.id] === "hard");
+    else if (kind === "bookmarks") pool = QUESTIONS.filter(q => bookmarked.has(q.id));
+    else if (kind === "all")    pool = [...QUESTIONS];
+    if (pool.length === 0) return;
+    // shuffle
+    const shuf = [...pool];
+    for (let i = shuf.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuf[i], shuf[j]] = [shuf[j], shuf[i]];
     }
+    setStudy({ kind, key, ids: shuf.map(q => q.id), idx: 0, sessionXp: 0, results: { easy: 0, medium: 0, hard: 0 } });
+    trackEvent("session_start", { kind, key, count: shuf.length });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [confidence, bookmarked]);
+
+  const endSession = () => setStudy(null);
+
+  const recordAnswer = useCallback((rating) => {
+    if (!study) return;
+    const id = study.ids[study.idx];
+    setConfidence(c => ({ ...c, [id]: rating }));
+    setCompleted(s => new Set(s).add(id));
+    const earned = XP_FOR[rating];
+    setXp(x => x + earned);
+    bumpStreak();
+    setStudy(s => ({
+      ...s,
+      idx: s.idx + 1,
+      sessionXp: s.sessionXp + earned,
+      results: { ...s.results, [rating]: s.results[rating] + 1 },
+    }));
+    trackEvent("answer", { rating });
+  }, [study, bumpStreak]);
+
+  const toggleBookmark = useCallback((id) => {
+    setBookmarked(s => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   }, []);
 
-  // Global "/" and Cmd/Ctrl+K shortcuts for search, Esc clears
+  // ============== STATS ==============
+  const stats = useMemo(() => {
+    const total = QUESTIONS.length;
+    const done = completed.size;
+    const byTopic = {};
+    Object.keys(TOPICS).forEach(t => {
+      const all = QUESTIONS.filter(q => q.topic === t);
+      byTopic[t] = { total: all.length, done: all.filter(q => completed.has(q.id)).length };
+    });
+    const byLevel = {};
+    Object.keys(LEVELS).forEach(l => {
+      const all = QUESTIONS.filter(q => q.level === l);
+      byLevel[l] = { total: all.length, done: all.filter(q => completed.has(q.id)).length };
+    });
+    const conf = { easy: 0, medium: 0, hard: 0 };
+    Object.values(confidence).forEach(c => { if (conf[c] != null) conf[c]++; });
+    return { total, done, byTopic, byLevel, conf };
+  }, [completed, confidence]);
+
+  // ============== RENDER ==============
+  if (study) {
+    return (
+      <StudyScreen
+        study={study}
+        bookmarked={bookmarked}
+        onAnswer={recordAnswer}
+        onToggleBookmark={toggleBookmark}
+        onExit={endSession}
+      />
+    );
+  }
+
+  return (
+    <AppShell
+      tab={tab}
+      onTabChange={setTab}
+      streak={streak}
+      xp={xp}
+      onSearchOpen={() => setSearchOpen(true)}
+    >
+      {tab === "learn" && (
+        <HomeScreen
+          stats={stats}
+          bookmarked={bookmarked}
+          confidence={confidence}
+          onStart={startSession}
+        />
+      )}
+      {tab === "stats" && (
+        <StatsScreen stats={stats} xp={xp} streak={streak} bookmarked={bookmarked} />
+      )}
+      {tab === "settings" && (
+        <SettingsScreen
+          theme={theme}
+          onThemeChange={setTheme}
+          onResetProgress={() => {
+            if (window.confirm("Reset all progress? This wipes XP, streak, ratings, bookmarks.")) {
+              setCompleted(new Set());
+              setBookmarked(new Set());
+              setConfidence({});
+              setXp(0);
+              setStreak(0);
+              setLastStudiedDate(null);
+            }
+          }}
+        />
+      )}
+
+      {searchOpen && (
+        <SearchOverlay
+          query={query}
+          onQueryChange={setQuery}
+          onClose={() => { setSearchOpen(false); setQuery(""); }}
+          onPick={(q) => {
+            setSearchOpen(false);
+            setQuery("");
+            // Open a single-question study session for the picked item
+            setStudy({ kind: "single", key: null, ids: [q.id], idx: 0, sessionXp: 0, results: { easy: 0, medium: 0, hard: 0 } });
+          }}
+        />
+      )}
+    </AppShell>
+  );
+}
+
+// ============== APP SHELL (header + bottom nav) ==============
+
+function AppShell({ tab, onTabChange, streak, xp, onSearchOpen, children }) {
+  return (
+    <div style={{
+      minHeight: "100vh",
+      paddingBottom: "92px",
+      background: "var(--bg-app)",
+    }}>
+      {/* TOP BAR */}
+      <header style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 20,
+        background: "var(--bg-app)",
+        padding: "16px 20px",
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+        maxWidth: "720px",
+        margin: "0 auto",
+      }}>
+        <div style={{
+          fontSize: "20px",
+          fontWeight: 800,
+          letterSpacing: "-0.02em",
+          color: "var(--text-primary)",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+        }}>
+          <span style={{
+            width: "32px", height: "32px",
+            background: "var(--brand)",
+            borderRadius: "10px",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            color: "#fff",
+            fontSize: "14px", fontWeight: 900,
+          }}>W</span>
+          web.drill
+        </div>
+
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "6px" }}>
+          <PillStat icon={<Flame size={16} className="animate-flame" color="#ff7a4d" fill="#ff7a4d" />} value={streak} label="streak" />
+          <PillStat icon={<Sparkles size={16} color="#f7b955" fill="#f7b955" />} value={xp} label="xp" />
+          <button
+            onClick={onSearchOpen}
+            style={iconBtnStyle}
+            aria-label="Search questions"
+            title="Search (⌘K)"
+          >
+            <Search size={18} />
+          </button>
+        </div>
+      </header>
+
+      {/* CONTENT */}
+      <main style={{
+        maxWidth: "720px",
+        margin: "0 auto",
+        padding: "8px 20px 20px",
+      }}>
+        {children}
+      </main>
+
+      {/* BOTTOM NAV */}
+      <nav style={{
+        position: "fixed",
+        left: "50%",
+        bottom: "16px",
+        transform: "translateX(-50%)",
+        display: "flex",
+        gap: "4px",
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-pill)",
+        padding: "6px",
+        boxShadow: "var(--shadow-lg)",
+        zIndex: 30,
+      }}>
+        {[
+          { k: "learn",    label: "Learn",    Icon: BookOpen },
+          { k: "stats",    label: "Progress", Icon: BarChart3 },
+          { k: "settings", label: "Settings", Icon: SettingsIcon },
+        ].map(({ k, label, Icon }) => {
+          const active = tab === k;
+          return (
+            <button
+              key={k}
+              onClick={() => onTabChange(k)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 18px",
+                borderRadius: "var(--radius-pill)",
+                background: active ? "var(--brand)" : "transparent",
+                color: active ? "#fff" : "var(--text-secondary)",
+                fontSize: "13px",
+                fontWeight: 600,
+                transition: "background 160ms, color 160ms",
+              }}
+              aria-current={active ? "page" : undefined}
+            >
+              <Icon size={16} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
+
+function PillStat({ icon, value, label }) {
+  return (
+    <div
+      title={`${value} ${label}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "5px",
+        padding: "6px 12px",
+        borderRadius: "var(--radius-pill)",
+        background: "var(--bg-card)",
+        boxShadow: "var(--shadow-sm)",
+        fontSize: "13px",
+        fontWeight: 700,
+        color: "var(--text-primary)",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {icon}
+      {value}
+    </div>
+  );
+}
+
+const iconBtnStyle = {
+  width: "36px",
+  height: "36px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: "var(--radius-pill)",
+  background: "var(--bg-card)",
+  boxShadow: "var(--shadow-sm)",
+  color: "var(--text-secondary)",
+};
+
+// ============== HOME SCREEN ==============
+
+function HomeScreen({ stats, bookmarked, confidence, onStart }) {
+  const overallPct = stats.total ? Math.round((stats.done / stats.total) * 100) : 0;
+  const hardCount = Object.values(confidence).filter(c => c === "hard").length;
+
+  return (
+    <div className="animate-fade">
+      {/* HERO BANNER */}
+      <div style={{
+        background: "linear-gradient(135deg, #5765f2 0%, #8b5cf6 100%)",
+        borderRadius: "var(--radius-xl)",
+        padding: "24px",
+        color: "#fff",
+        boxShadow: "var(--shadow-brand)",
+        marginBottom: "20px",
+        position: "relative",
+        overflow: "hidden",
+      }}>
+        <div style={{
+          position: "absolute",
+          right: "-30px", top: "-30px",
+          width: "180px", height: "180px",
+          background: "rgba(255,255,255,0.1)",
+          borderRadius: "50%",
+        }} />
+        <div style={{ fontSize: "13px", opacity: 0.9, fontWeight: 600, marginBottom: "8px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+          {stats.done === 0 ? "Welcome 👋" : "Keep going"}
+        </div>
+        <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2, marginBottom: "16px" }}>
+          {stats.done === 0
+            ? "Start your web interview journey"
+            : `${overallPct}% complete · nice work`}
+        </div>
+
+        <ProgressBar value={overallPct} />
+
+        <div style={{ display: "flex", gap: "10px", marginTop: "20px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => onStart("all")}
+            style={{
+              background: "#fff",
+              color: "var(--brand)",
+              padding: "12px 22px",
+              borderRadius: "var(--radius-pill)",
+              fontSize: "14px",
+              fontWeight: 700,
+              display: "inline-flex", alignItems: "center", gap: "8px",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+            }}
+          >
+            <ArrowRight size={16} /> Quick start (random)
+          </button>
+          {hardCount > 0 && (
+            <button
+              onClick={() => onStart("review")}
+              style={{
+                background: "rgba(255,255,255,0.18)",
+                color: "#fff",
+                padding: "12px 18px",
+                borderRadius: "var(--radius-pill)",
+                fontSize: "14px",
+                fontWeight: 700,
+                display: "inline-flex", alignItems: "center", gap: "8px",
+                backdropFilter: "blur(10px)",
+              }}
+            >
+              <RotateCcw size={16} /> Review {hardCount} hard
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* PATH BY LEVEL */}
+      <SectionTitle>Your path</SectionTitle>
+      <div style={{ display: "grid", gap: "10px", marginBottom: "28px" }}>
+        {Object.entries(LEVELS).map(([k, lvl]) => {
+          const s = stats.byLevel[k];
+          const pct = s.total ? (s.done / s.total) * 100 : 0;
+          const colorVar = `var(--level-${k})`;
+          return (
+            <button
+              key={k}
+              onClick={() => onStart("level", k)}
+              disabled={s.total === 0}
+              style={{
+                background: "var(--bg-card)",
+                borderRadius: "var(--radius-lg)",
+                padding: "16px 18px",
+                boxShadow: "var(--shadow-sm)",
+                display: "flex",
+                alignItems: "center",
+                gap: "16px",
+                textAlign: "left",
+                opacity: s.total === 0 ? 0.45 : 1,
+                transition: "transform 120ms, box-shadow 120ms",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "var(--shadow-md)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "";
+                e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+              }}
+            >
+              <LevelMedal lvl={k} done={s.done} total={s.total} colorVar={colorVar} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "2px" }}>
+                  {lvl.label.charAt(0) + lvl.label.slice(1).toLowerCase()}
+                </div>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
+                  {s.done} of {s.total} mastered
+                </div>
+                <div style={{ height: "6px", background: "var(--bg-inset)", borderRadius: "var(--radius-pill)", overflow: "hidden" }}>
+                  <div style={{
+                    width: `${pct}%`,
+                    height: "100%",
+                    background: colorVar,
+                    borderRadius: "var(--radius-pill)",
+                    transition: "width 320ms",
+                  }} />
+                </div>
+              </div>
+              <ChevronLeft size={18} style={{ color: "var(--text-faint)", transform: "rotate(180deg)" }} />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* TOPICS GRID */}
+      <SectionTitle
+        right={
+          bookmarked.size > 0 ? (
+            <button
+              onClick={() => onStart("bookmarks")}
+              style={{
+                fontSize: "12px",
+                fontWeight: 700,
+                color: "var(--brand)",
+                display: "inline-flex", alignItems: "center", gap: "4px",
+              }}
+            >
+              <Star size={13} fill="currentColor" /> {bookmarked.size} bookmarked
+            </button>
+          ) : null
+        }
+      >
+        Topics
+      </SectionTitle>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+        gap: "10px",
+      }}>
+        {Object.entries(TOPICS).map(([k, label]) => {
+          const Icon = TOPIC_ICONS[k] || Globe;
+          const hue = TOPIC_HUES[k] || "#5765f2";
+          const s = stats.byTopic[k];
+          const pct = s.total ? (s.done / s.total) * 100 : 0;
+          return (
+            <button
+              key={k}
+              onClick={() => onStart("topic", k)}
+              disabled={s.total === 0}
+              style={{
+                background: "var(--bg-card)",
+                borderRadius: "var(--radius-lg)",
+                padding: "16px 14px",
+                boxShadow: "var(--shadow-sm)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: "10px",
+                textAlign: "left",
+                position: "relative",
+                opacity: s.total === 0 ? 0.4 : 1,
+                transition: "transform 120ms, box-shadow 120ms",
+                cursor: s.total === 0 ? "not-allowed" : "pointer",
+                minHeight: "120px",
+              }}
+              onMouseEnter={(e) => {
+                if (s.total === 0) return;
+                e.currentTarget.style.transform = "translateY(-3px)";
+                e.currentTarget.style.boxShadow = "var(--shadow-md)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "";
+                e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+              }}
+            >
+              <div style={{
+                width: "40px", height: "40px",
+                borderRadius: "12px",
+                background: `${hue}22`,
+                color: hue,
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <Icon size={20} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.25 }}>
+                  {label}
+                </div>
+                <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px", fontWeight: 600 }}>
+                  {s.done} / {s.total}
+                </div>
+              </div>
+              <div style={{
+                position: "absolute",
+                left: "14px", right: "14px", bottom: "12px",
+                height: "4px",
+                background: "var(--bg-inset)",
+                borderRadius: "var(--radius-pill)",
+                overflow: "hidden",
+              }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: hue, transition: "width 320ms" }} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SectionTitle({ children, right }) {
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      margin: "8px 4px 12px",
+    }}>
+      <h2 style={{
+        fontSize: "16px",
+        fontWeight: 800,
+        color: "var(--text-primary)",
+        margin: 0,
+        letterSpacing: "-0.01em",
+      }}>{children}</h2>
+      {right}
+    </div>
+  );
+}
+
+function ProgressBar({ value }) {
+  return (
+    <div style={{ height: "10px", background: "rgba(255,255,255,0.18)", borderRadius: "var(--radius-pill)", overflow: "hidden" }}>
+      <div style={{
+        width: `${value}%`,
+        height: "100%",
+        background: "#fff",
+        borderRadius: "var(--radius-pill)",
+        transition: "width 320ms",
+      }} />
+    </div>
+  );
+}
+
+function LevelMedal({ lvl, done, total, colorVar }) {
+  const pct = total ? (done / total) * 100 : 0;
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  return (
+    <div style={{ position: "relative", width: "60px", height: "60px", flexShrink: 0 }}>
+      <svg width="60" height="60" viewBox="0 0 60 60" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx="30" cy="30" r={r} fill="none" stroke="var(--bg-inset)" strokeWidth="5" />
+        <circle
+          cx="30" cy="30" r={r}
+          fill="none"
+          stroke={colorVar}
+          strokeWidth="5"
+          strokeDasharray={c}
+          strokeDashoffset={c - (pct / 100) * c}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset 320ms" }}
+        />
+      </svg>
+      <div style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: "13px",
+        fontWeight: 800,
+        color: colorVar,
+      }}>
+        {Math.round(pct)}%
+      </div>
+    </div>
+  );
+}
+
+// ============== STUDY SCREEN ==============
+
+function StudyScreen({ study, bookmarked, onAnswer, onToggleBookmark, onExit }) {
+  const finished = study.idx >= study.ids.length;
+  if (finished) return <DoneScreen study={study} onExit={onExit} />;
+
+  const id = study.ids[study.idx];
+  const q = QUESTIONS.find(x => x.id === id);
+  const lvl = LEVELS[q.level];
+  const Icon = TOPIC_ICONS[q.topic] || Globe;
+  const hue = TOPIC_HUES[q.topic] || "#5765f2";
+
+  const [revealed, setRevealed] = useState(false);
+  const cardRef = useRef(null);
+
+  // Reset reveal when question changes
+  useEffect(() => {
+    setRevealed(false);
+    cardRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [id]);
+
+  // Keyboard: Space = reveal, 1/2/3 = rate, Esc = exit
   useEffect(() => {
     const onKey = (e) => {
-      const tag = e.target?.tagName;
-      const typing = tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable;
-      const isModK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k";
-      const isSlash = e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey;
-      if (isModK) {
+      if (e.key === "Escape") { onExit(); return; }
+      if (!revealed && (e.key === " " || e.key === "Enter")) {
         e.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      } else if (isSlash && !typing) {
-        e.preventDefault();
-        searchRef.current?.focus();
-      } else if (e.key === "Escape" && document.activeElement === searchRef.current) {
-        if (searchRef.current?.value) setQuery(""); else searchRef.current?.blur();
+        setRevealed(true);
+        return;
+      }
+      if (revealed) {
+        if (e.key === "1") onAnswer("hard");
+        else if (e.key === "2") onAnswer("medium");
+        else if (e.key === "3") onAnswer("easy");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [revealed, onAnswer, onExit]);
 
-  // Debounced search event (fires 800ms after last keystroke)
-  useEffect(() => {
-    if (!query.trim()) return;
-    const t = setTimeout(() => trackEvent("search", { search_term: query.trim() }), 800);
-    return () => clearTimeout(t);
-  }, [query]);
-
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("web-theme", next); } catch { /* ignore */ }
-    trackEvent("theme_toggle", { theme: next });
-  };
-
-  const updateConsent = (value) => {
-    setConsent(value);
-    try { localStorage.setItem("web-ga-consent", value); } catch { /* ignore */ }
-    setAnalyticsConsent(value);
-    trackEvent(value === "granted" ? "consent_granted" : "consent_denied");
-    if (value === "granted" && username) setAnalyticsUser(username);
-  };
-
-  const commitUsername = (value) => {
-    const clean = value.trim().slice(0, 64);
-    setUsername(clean);
-    try {
-      if (clean) localStorage.setItem("web-username", clean);
-      else localStorage.removeItem("web-username");
-    } catch { /* ignore */ }
-    setAnalyticsUser(clean);
-    if (clean) trackEvent("username_set");
-  };
-
-  // Persist on any change (debounced via microtask)
-  useEffect(() => {
-    const ok = saveState({
-      completed: [...completed],
-      bookmarked: [...bookmarked],
-      revealed: [...revealed],
-      confidence,
-      levelFilter,
-      topicFilter,
-      hideCompleted,
-      blindMode,
-      showIntro,
-    });
-    if (ok) {
-      setLastSaved(new Date().toISOString());
-      setSaveFlash(true);
-      const t = setTimeout(() => setSaveFlash(false), 600);
-      return () => clearTimeout(t);
-    }
-  }, [completed, bookmarked, revealed, confidence, levelFilter, topicFilter, hideCompleted, blindMode, showIntro]);
-
-  // ============== DERIVED ==============
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const passRating = (id) => {
-      if (ratingFilter === "all") return true;
-      if (ratingFilter === "bookmarked") return bookmarked.has(id);
-      if (ratingFilter === "unrated") return !confidence[id];
-      return confidence[id] === ratingFilter;
-    };
-    return QUESTIONS.filter((q) => {
-      if (levelFilter !== "all" && q.level !== levelFilter) return false;
-      if (topicFilter !== "all" && q.topic !== topicFilter) return false;
-      if (hideCompleted && completed.has(q.id)) return false;
-      if (!passRating(q.id)) return false;
-      if (tagFilter) {
-        const kws = (q.keywords || []).map((k) => k.toLowerCase());
-        if (!kws.includes(tagFilter.toLowerCase())) return false;
-      }
-      if (needle) {
-        const hay = `${q.q} ${q.a} ${(q.keywords || []).join(" ")}`.toLowerCase();
-        if (!hay.includes(needle)) return false;
-      }
-      return true;
-    }).sort((a, b) => LEVELS[a.level].order - LEVELS[b.level].order || a.id - b.id);
-  }, [levelFilter, topicFilter, hideCompleted, completed, query, ratingFilter, bookmarked, confidence, tagFilter]);
-
-  const stats = useMemo(() => {
-    const total = QUESTIONS.length;
-    const done = completed.size;
-    const byLevel = {};
-    Object.keys(LEVELS).forEach((l) => {
-      const lvlQs = QUESTIONS.filter((q) => q.level === l);
-      byLevel[l] = {
-        total: lvlQs.length,
-        done: lvlQs.filter((q) => completed.has(q.id)).length,
-      };
-    });
-    const confCount = { easy: 0, medium: 0, hard: 0 };
-    Object.values(confidence).forEach((c) => (confCount[c] = (confCount[c] || 0) + 1));
-    return { total, done, byLevel, confCount };
-  }, [completed, confidence]);
-
-  // ============== ACTIONS ==============
-  const [lastCheckedId, setLastCheckedId] = useState(null);
-
-  const toggleComplete = useCallback((id, shiftKey = false) => {
-    if (shiftKey && lastCheckedId !== null && lastCheckedId !== id) {
-      // Range toggle over the CURRENTLY VISIBLE (filtered) list
-      const orderedIds = filtered.map((q) => q.id);
-      const a = orderedIds.indexOf(lastCheckedId);
-      const b = orderedIds.indexOf(id);
-      if (a !== -1 && b !== -1) {
-        const [from, to] = a < b ? [a, b] : [b, a];
-        const rangeIds = orderedIds.slice(from, to + 1);
-        const target = !completed.has(id); // new state of the clicked item
-        setCompleted((prev) => {
-          const next = new Set(prev);
-          for (const rid of rangeIds) {
-            if (target) next.add(rid);
-            else next.delete(rid);
-          }
-          return next;
-        });
-        setLastCheckedId(id);
-        trackEvent(target ? "questions_checked" : "questions_unchecked", {
-          method: "shift_range",
-          count: rangeIds.length,
-        });
-        return;
-      }
-    }
-    setCompleted((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-    setLastCheckedId(id);
-  }, [lastCheckedId, completed, filtered]);
-
-  const toggleBookmark = useCallback((id) => {
-    setBookmarked((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }, []);
-
-  const toggleReveal = useCallback((id) => {
-    setRevealed((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }, []);
-
-  const setConf = useCallback((id, level) => {
-    setConfidence((prev) => ({ ...prev, [id]: level }));
-  }, []);
-
-  // Quiz mode — pick 10 items, prioritizing hard + bookmarked
-  const startQuiz = (size = 10) => {
-    const all = QUESTIONS.map((q) => q.id);
-    const hard = all.filter((id) => confidence[id] === "hard");
-    const booked = all.filter((id) => bookmarked.has(id) && confidence[id] !== "hard");
-    const rest = all.filter((id) => !hard.includes(id) && !booked.includes(id));
-    const shuffle = (a) => {
-      const arr = [...a];
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-      return arr;
-    };
-    const pool = [...shuffle(hard), ...shuffle(booked), ...shuffle(rest)].slice(0, size);
-    if (pool.length === 0) return;
-    setQuiz({ ids: pool, idx: 0, results: { easy: 0, medium: 0, hard: 0 } });
-    trackEvent("quiz_started", { size: pool.length });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const quizAnswer = (rating) => {
-    if (!quiz) return;
-    const currentId = quiz.ids[quiz.idx];
-    setConf(currentId, rating);
-    setQuiz({
-      ...quiz,
-      idx: quiz.idx + 1,
-      results: { ...quiz.results, [rating]: quiz.results[rating] + 1 },
-    });
-    trackEvent("quiz_answer", { rating });
-  };
-
-  const exitQuiz = () => {
-    if (quiz) trackEvent("quiz_exited", { idx: quiz.idx, total: quiz.ids.length });
-    setQuiz(null);
-  };
-
-  const questionById = (id) => QUESTIONS.find((q) => q.id === id);
-
-  const resetAll = () => {
-    if (window.confirm("Reset all progress? This will clear checks, bookmarks, and ratings.")) {
-      setCompleted(new Set());
-      setBookmarked(new Set());
-      setRevealed(new Set());
-      setConfidence({});
-    }
-  };
-
-  // EXPORT
-  const exportProgress = () => {
-    const data = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      completed: [...completed],
-      bookmarked: [...bookmarked],
-      revealed: [...revealed],
-      confidence,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `interview-prep-progress-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // IMPORT
-  const importProgress = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (!window.confirm("Import this progress? Your current progress will be replaced.")) return;
-        setCompleted(new Set(data.completed || []));
-        setBookmarked(new Set(data.bookmarked || []));
-        setRevealed(new Set(data.revealed || []));
-        setConfidence(data.confidence || {});
-      } catch (err) {
-        alert("Failed to import: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-    // reset input so same file can be re-imported
-    e.target.value = "";
-  };
-
-  const progressPct = Math.round((stats.done / stats.total) * 100);
+  const pct = ((study.idx) / study.ids.length) * 100;
+  const isBookmarked = bookmarked.has(id);
 
   return (
-    <div style={{ padding: "20px" }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        {/* HEADER — brutalist block */}
-        <header style={{ marginBottom: "32px" }}>
-          {/* top bar: meta + actions */}
+    <div style={{
+      minHeight: "100vh",
+      background: "var(--bg-app)",
+      display: "flex",
+      flexDirection: "column",
+    }}>
+      {/* TOP BAR */}
+      <header style={{
+        position: "sticky", top: 0, zIndex: 10,
+        padding: "16px 20px",
+        background: "var(--bg-app)",
+        display: "flex",
+        alignItems: "center",
+        gap: "14px",
+        maxWidth: "720px",
+        margin: "0 auto",
+        width: "100%",
+      }}>
+        <button onClick={onExit} style={iconBtnStyle} aria-label="Exit study">
+          <X size={18} />
+        </button>
+        <div style={{ flex: 1 }}>
+          <div style={{ height: "8px", background: "var(--bg-inset)", borderRadius: "var(--radius-pill)", overflow: "hidden" }}>
+            <div style={{
+              width: `${pct}%`,
+              height: "100%",
+              background: hue,
+              transition: "width 280ms",
+              borderRadius: "var(--radius-pill)",
+            }} />
+          </div>
+        </div>
+        <div style={{
+          fontSize: "13px",
+          color: "var(--text-secondary)",
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+          minWidth: "44px",
+          textAlign: "right",
+        }}>
+          {study.idx + 1}/{study.ids.length}
+        </div>
+        <button
+          onClick={() => onToggleBookmark(id)}
+          style={iconBtnStyle}
+          aria-label={isBookmarked ? "Remove bookmark" : "Bookmark"}
+          title={isBookmarked ? "Remove bookmark" : "Bookmark"}
+        >
+          <Star
+            size={18}
+            color={isBookmarked ? "#f7b955" : "var(--text-muted)"}
+            fill={isBookmarked ? "#f7b955" : "transparent"}
+          />
+        </button>
+      </header>
+
+      {/* CARD */}
+      <main
+        ref={cardRef}
+        key={id}
+        className="animate-slide-right"
+        style={{
+          flex: 1,
+          maxWidth: "720px",
+          width: "100%",
+          margin: "0 auto",
+          padding: "8px 20px 200px",
+        }}
+      >
+        {/* meta chips */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+          <Chip color={`var(--level-${q.level})`}>{lvl.label}</Chip>
+          <Chip color={hue}>
+            <Icon size={12} style={{ marginRight: "4px", verticalAlign: "-2px" }} />
+            {TOPICS[q.topic]}
+          </Chip>
+        </div>
+
+        {/* question */}
+        <h1 style={{
+          fontSize: "clamp(22px, 4.2vw, 30px)",
+          fontWeight: 800,
+          color: "var(--text-primary)",
+          letterSpacing: "-0.02em",
+          lineHeight: 1.25,
+          margin: "0 0 24px 0",
+        }}>
+          {q.q}
+        </h1>
+
+        {!revealed ? (
           <div style={{
-            display: "flex",
-            alignItems: "stretch",
-            gap: "0",
-            marginBottom: "20px",
-            flexWrap: "wrap",
-            border: "2px solid var(--border-default)",
-            background: "var(--bg-surface)",
+            background: "var(--bg-card)",
+            borderRadius: "var(--radius-xl)",
+            padding: "40px 24px",
+            boxShadow: "var(--shadow-md)",
+            textAlign: "center",
           }}>
             <div style={{
-              padding: "10px 16px",
-              borderRight: "2px solid var(--border-default)",
-              background: "var(--brand)",
-              color: "#0a0a0a",
-              fontWeight: 800,
-              fontSize: "12px",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              display: "flex",
-              alignItems: "center",
-            }}>
-              ⬛ WEB.DRILL
+              width: "64px", height: "64px",
+              margin: "0 auto 16px",
+              borderRadius: "50%",
+              background: "var(--brand-soft)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--brand)",
+            }} className="animate-pulse-ring">
+              <Eye size={28} />
             </div>
             <div style={{
-              padding: "10px 16px",
-              flex: 1,
-              fontSize: "12px",
-              color: "var(--text-muted)",
-              fontFamily: "'JetBrains Mono', monospace",
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              minWidth: 0,
-            }}>
-              <span style={{
-                width: "8px", height: "8px",
-                background: saveFlash ? "var(--accent-green)" : "var(--text-faint)",
-                transition: "background 0.2s",
-              }} />
-              {lastSaved ? `saved ${new Date(lastSaved).toLocaleTimeString()}` : "unsaved"}
-            </div>
-            <button
-              onClick={() => startQuiz(10)}
-              style={{
-                padding: "10px 18px",
-                borderTop: "none",
-                borderBottom: "none",
-                borderRight: "2px solid var(--border-default)",
-                borderLeft: "2px solid var(--border-default)",
-                background: "var(--bg-app)",
-                color: "var(--text-primary)",
-                fontSize: "12px",
-                fontWeight: 800,
-                letterSpacing: "0.1em",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-              aria-label="Start quiz"
-              title="Quiz yourself on 10 random items (weak + bookmarked first)"
-            >
-              <Play size={14} fill="currentColor" /> QUIZ
-            </button>
-            <button
-              onClick={toggleTheme}
-              style={{
-                padding: "10px 14px",
-                border: "none",
-                background: "var(--bg-app)",
-                color: "var(--text-primary)",
-                display: "flex",
-                alignItems: "center",
-              }}
-              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            >
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-          </div>
-
-          {/* TITLE BLOCK — huge, bordered, hard shadow */}
-          <div className="brut-shadow" style={{
-            border: "3px solid var(--border-default)",
-            background: "var(--bg-surface)",
-            padding: "28px 24px",
-            marginBottom: "16px",
-          }}>
-            <h1 style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontSize: "clamp(36px, 7vw, 72px)",
-              fontWeight: 700,
-              margin: "0",
-              letterSpacing: "-0.04em",
-              lineHeight: 0.9,
-              color: "var(--text-primary)",
-              textTransform: "uppercase",
-            }}>
-              WEB <span style={{ color: "var(--brand)" }}>/</span><span style={{ color: "var(--accent-red)" }}>/</span> INTERVIEW
-              <br />
-              <span style={{ color: "var(--accent-red)" }}>DRILL.</span>
-            </h1>
-          </div>
-
-          {/* SUBTITLE — tag-strip */}
-          <div style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "0",
-            border: "2px solid var(--border-default)",
-            borderTop: "none",
-            background: "var(--bg-surface-2)",
-          }}>
-            {[
-              "HTTP", "DJANGO", "FASTAPI", "AUTH", "CORS",
-              "SECURITY", "JS/DOM", "REACT/VUE",
-            ].map((tag, i) => (
-              <span key={tag} style={{
-                padding: "8px 14px",
-                fontSize: "11px",
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                color: "var(--text-secondary)",
-                borderRight: i < 7 ? "2px solid var(--border-default)" : "none",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}>
-                {tag}
-              </span>
-            ))}
-            <span style={{
-              padding: "8px 14px",
-              fontSize: "11px",
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              color: "var(--bg-app)",
-              background: "var(--brand)",
-              marginLeft: "auto",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}>
-              TRAINEE → LEAD
-            </span>
-          </div>
-        </header>
-
-        {/* QUIZ MODE — replaces everything below when active */}
-        {quiz && (() => {
-          const finished = quiz.idx >= quiz.ids.length;
-          if (finished) {
-            const { easy, medium, hard } = quiz.results;
-            const total = quiz.ids.length;
-            return (
-              <div style={{
-                background: "var(--bg-surface)",
-                border: "1px solid var(--accent-blue)",
-                borderLeft: "3px solid var(--accent-blue)",
-                borderRadius: "0",
-                padding: "28px",
-                marginBottom: "20px",
-              }}>
-                <div style={{
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontSize: "22px",
-                  fontWeight: 700,
-                  color: "var(--text-primary)",
-                  marginBottom: "8px",
-                }}>
-                  Quiz complete
-                </div>
-                <div style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "20px" }}>
-                  You rated {total} question{total === 1 ? "" : "s"}. Ratings are saved. Hit Quiz again to drill on the weak ones.
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "20px" }}>
-                  {[
-                    { k: "easy", v: easy, color: "var(--accent-green)" },
-                    { k: "medium", v: medium, color: "var(--accent-amber)" },
-                    { k: "hard", v: hard, color: "var(--accent-red)" },
-                  ].map((r) => (
-                    <div key={r.k} style={{
-                      background: `color-mix(in srgb, ${r.color} 10%, transparent)`,
-                      border: `1px solid color-mix(in srgb, ${r.color} 30%, transparent)`,
-                      borderRadius: "0",
-                      padding: "14px",
-                      textAlign: "center",
-                    }}>
-                      <div style={{
-                        fontFamily: "'Space Grotesk', sans-serif",
-                        fontSize: "32px", fontWeight: 700,
-                        color: r.color, lineHeight: 1,
-                      }}>{r.v}</div>
-                      <div style={{
-                        fontSize: "10px", textTransform: "uppercase",
-                        letterSpacing: "0.1em", color: r.color, marginTop: "6px",
-                      }}>{r.k}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => startQuiz(10)}
-                    style={{
-                      background: "var(--accent-blue)",
-                      color: "var(--bg-app)",
-                      border: "1px solid var(--accent-blue)",
-                      padding: "7px 14px",
-                      borderRadius: "0",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <Play size={12} /> Another round
-                  </button>
-                  <button
-                    onClick={exitQuiz}
-                    style={{ ...btnStyle, padding: "7px 14px" }}
-                  >
-                    Back to guide
-                  </button>
-                </div>
-              </div>
-            );
-          }
-          const currentId = quiz.ids[quiz.idx];
-          const q = questionById(currentId);
-          if (!q) {
-            return <div>Question {currentId} not found. <button onClick={exitQuiz}>Exit</button></div>;
-          }
-          const lvl = LEVELS[q.level];
-          const isRev = revealed.has(currentId);
-          return (
-            <div style={{
-              background: "var(--bg-surface)",
-              border: "2px solid var(--border-default)",
-              borderLeft: `3px solid ${lvl.color}`,
-              borderRadius: "0",
-              overflow: "hidden",
+              color: "var(--text-secondary)",
+              fontSize: "15px",
+              fontWeight: 600,
               marginBottom: "20px",
             }}>
-              {/* Header */}
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                padding: "10px 16px",
-                borderBottom: "2px solid var(--border-default)",
-                flexWrap: "wrap",
-              }}>
-                <span style={{
-                  fontSize: "11px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--text-muted)",
-                }}>
-                  Quiz · {quiz.idx + 1} / {quiz.ids.length}
-                </span>
-                <span style={{
-                  fontSize: "10px",
-                  color: lvl.color,
-                  padding: "2px 6px",
-                  border: `1px solid ${lvl.color}55`,
-                  borderRadius: "0",
-                }}>{lvl.label}</span>
-                <span style={{
-                  fontSize: "10px",
-                  color: "var(--text-muted)",
-                  padding: "2px 6px",
-                  border: "2px solid var(--border-default)",
-                  borderRadius: "0",
-                }}>{TOPICS[q.topic]}</span>
-                <div style={{ marginLeft: "auto", display: "flex", gap: "8px", fontSize: "11px", fontVariantNumeric: "tabular-nums" }}>
-                  <span style={{ color: "var(--accent-green)" }}>{quiz.results.easy}↑</span>
-                  <span style={{ color: "var(--accent-amber)" }}>{quiz.results.medium}~</span>
-                  <span style={{ color: "var(--accent-red)" }}>{quiz.results.hard}↓</span>
-                  <button onClick={exitQuiz} style={{ ...btnStyle, padding: "2px 8px" }}>
-                    <X size={11} /> exit
-                  </button>
-                </div>
-              </div>
-              {/* Progress */}
-              <div style={{ height: "3px", background: "var(--bg-inset)" }}>
-                <div style={{
-                  width: `${(quiz.idx / quiz.ids.length) * 100}%`,
-                  height: "100%",
-                  background: lvl.color,
-                  transition: "width 0.2s",
-                }} />
-              </div>
-              {/* Body */}
-              <div style={{ padding: "24px" }}>
-                <h2 style={{
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontSize: "18px",
-                  fontWeight: 500,
-                  color: "var(--text-primary)",
-                  lineHeight: 1.5,
-                  margin: "0 0 20px 0",
-                }}>
-                  {q.q}
-                </h2>
-                {!isRev ? (
-                  <div style={{ padding: "20px 0", textAlign: "center" }}>
-                    <button
-                      onClick={() => toggleReveal(currentId)}
-                      style={{
-                        background: "transparent",
-                        border: `1px solid ${lvl.color}`,
-                        color: lvl.color,
-                        padding: "10px 28px",
-                        borderRadius: "0",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      <Eye size={14} /> Reveal answer
-                    </button>
-                    <div style={{ color: "var(--text-muted)", fontSize: "12px", marginTop: "12px" }}>
-                      Think it through first. Then rate how well you knew it.
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{
-                      whiteSpace: "pre-wrap",
-                      fontSize: "13.5px",
-                      lineHeight: 1.75,
-                      color: "var(--text-secondary)",
-                      marginBottom: "20px",
-                    }}>
-                      {q.a}
-                    </div>
-                    <div style={{
-                      display: "flex",
-                      gap: "8px",
-                      paddingTop: "16px",
-                      borderTop: "2px solid var(--border-subtle)",
-                      flexWrap: "wrap",
-                    }}>
-                      {["easy", "medium", "hard"].map((c) => {
-                        const cColor = c === "easy" ? "var(--accent-green)" : c === "medium" ? "var(--accent-amber)" : "var(--accent-red)";
-                        return (
-                          <button
-                            key={c}
-                            onClick={() => quizAnswer(c)}
-                            style={{
-                              flex: 1,
-                              minWidth: "100px",
-                              background: `color-mix(in srgb, ${cColor} 15%, transparent)`,
-                              border: `1px solid color-mix(in srgb, ${cColor} 55%, transparent)`,
-                              color: cColor,
-                              padding: "10px 16px",
-                              borderRadius: "0",
-                              cursor: "pointer",
-                              fontFamily: "inherit",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.1em",
-                            }}
-                          >
-                            {c}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
+              Think about your answer first.
             </div>
-          );
-        })()}
-
-        {/* INTRO */}
-        {!quiz && showIntro && (
-          <div className="brut-shadow" style={{
-            background: "var(--bg-surface)",
-            border: "2px solid var(--border-default)",
-            borderLeft: "8px solid var(--brand)",
-            padding: "20px 24px",
-            borderRadius: "0",
-            marginBottom: "24px",
-            fontSize: "13px",
-            position: "relative",
-          }}>
             <button
-              onClick={() => setShowIntro(false)}
-              style={{
-                position: "absolute", top: "12px", right: "12px",
-                background: "none", border: "none", color: "var(--text-muted)",
-                cursor: "pointer", padding: "4px",
-              }}
-              aria-label="Close intro"
-            ><X size={16} /></button>
-            <div style={{ color: "var(--accent-blue)", fontWeight: 600, marginBottom: "8px" }}>HOW TO USE THIS</div>
-            <div style={{ color: "var(--text-secondary)", lineHeight: 1.7 }}>
-              <strong style={{ color: "var(--accent-green)" }}>1.</strong> Toggle <strong>BLIND MODE</strong> to hide answers — force yourself to think first.<br />
-              <strong style={{ color: "var(--accent-green)" }}>2.</strong> After each question, rate your confidence (easy / medium / hard) — focus on <span style={{ color: "var(--accent-red)" }}>hard</span> on the last review pass.<br />
-              <strong style={{ color: "var(--accent-green)" }}>3.</strong> Bookmark <span style={{ color: "var(--accent-amber)" }}>⚑</span> the ones you want to revisit 1 hour before the interview.<br />
-              <strong style={{ color: "var(--accent-green)" }}>4.</strong> <span style={{ color: "var(--accent-red)" }}>Tricky</span> section is last — these are the gotchas seniors are actually tested on.<br />
-              <strong style={{ color: "var(--accent-green)" }}>5.</strong> Your progress is saved automatically. Export it as JSON for backup / syncing across devices.
+              onClick={() => setRevealed(true)}
+              style={primaryBtnStyle}
+            >
+              Reveal answer
+              <span style={{ opacity: 0.65, fontSize: "11px", marginLeft: "8px" }}>SPACE</span>
+            </button>
+          </div>
+        ) : (
+          <div className="animate-pop">
+            <div style={{
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius-xl)",
+              padding: "24px",
+              boxShadow: "var(--shadow-md)",
+              fontSize: "14.5px",
+              lineHeight: 1.7,
+              color: "var(--text-secondary)",
+              whiteSpace: "pre-wrap",
+              fontFamily: "'Inter', sans-serif",
+            }}>
+              {q.a}
             </div>
-          </div>
-        )}
 
-        {!quiz && <>
-        {/* STATS */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "12px",
-          marginBottom: "20px",
-        }}>
-          <StatCard label="TOTAL PROGRESS" value={`${stats.done}/${stats.total}`} accent="var(--accent-blue)" sub={`${progressPct}% complete`} />
-          <StatCard label="BOOKMARKED" value={bookmarked.size} accent="var(--accent-amber)" sub="for quick review" icon={<Flame size={14} />} />
-          <StatCard label="CONFIDENT" value={stats.confCount.easy || 0} accent="var(--accent-green)" sub="got this cold" icon={<Check size={14} />} />
-          <StatCard label="NEEDS WORK" value={stats.confCount.hard || 0} accent="var(--accent-red)" sub="revisit!" icon={<AlertTriangle size={14} />} />
-        </div>
-
-        {/* PROGRESS BY LEVEL */}
-        <div style={{ marginBottom: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--text-muted)", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            <span>by level</span>
-            <span>done / total</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {Object.entries(LEVELS).map(([key, lvl]) => {
-              const s = stats.byLevel[key];
-              const pct = s.total ? (s.done / s.total) * 100 : 0;
-              return (
-                <div key={key} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12px" }}>
-                  <div style={{ width: "70px", color: lvl.color, fontWeight: 600, letterSpacing: "0.05em" }}>{lvl.label}</div>
-                  <div style={{ flex: 1, height: "8px", background: "var(--bg-surface)", borderRadius: "0", overflow: "hidden", border: "2px solid var(--border-default)" }}>
-                    <div style={{
-                      width: `${pct}%`, height: "100%",
-                      background: `linear-gradient(90deg, ${lvl.color}aa, ${lvl.color})`,
-                      transition: "width 0.3s",
-                    }} />
-                  </div>
-                  <div style={{ width: "50px", textAlign: "right", color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>{s.done}/{s.total}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* SEARCH */}
-        <div style={{ marginBottom: "12px", position: "relative" }}>
-          <Search
-            size={14}
-            style={{
-              position: "absolute", left: "12px", top: "50%",
-              transform: "translateY(-50%)", color: "var(--text-muted)",
-            }}
-          />
-          <input
-            ref={searchRef}
-            type="text"
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); setSuggestIdx(-1); }}
-            onFocus={() => setSuggestFocused(true)}
-            onBlur={() => setTimeout(() => setSuggestFocused(false), 150)}
-            onKeyDown={(e) => {
-              const suggestions = query.trim() ? filtered.slice(0, 8) : [];
-              if (suggestions.length === 0) return;
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setSuggestIdx((i) => Math.min(suggestions.length - 1, i + 1));
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setSuggestIdx((i) => Math.max(-1, i - 1));
-              } else if (e.key === "Enter") {
-                e.preventDefault();
-                const pick = suggestions[Math.max(0, suggestIdx)];
-                if (pick) {
-                  setExpandedId(pick.id);
-                  setSuggestFocused(false);
-                  searchRef.current?.blur();
-                  setTimeout(() => {
-                    document.getElementById(`q-${pick.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }, 50);
-                  trackEvent("suggestion_picked", { id: pick.id });
-                }
-              }
-            }}
-            placeholder="Search questions, answers, keywords…"
-            aria-label="Search"
-            aria-autocomplete="list"
-            style={{
-              width: "100%",
-              background: "var(--bg-surface)",
-              border: "2px solid var(--border-default)",
-              borderRadius: "0",
-              padding: "10px 12px 10px 34px",
-              color: "var(--text-primary)",
-              fontFamily: "inherit",
-              fontSize: "13px",
-            }}
-          />
-          <div style={{
-            position: "absolute", right: "10px", top: "50%",
-            transform: "translateY(-50%)", display: "flex", gap: "6px",
-            alignItems: "center",
-          }}>
-            {query ? (
-              <>
-                <span style={{
-                  fontSize: "11px", color: "var(--accent-blue)",
-                  fontVariantNumeric: "tabular-nums",
-                }}>
-                  {filtered.length} {filtered.length === 1 ? "match" : "matches"}
-                </span>
-                <button
-                  onClick={() => { setQuery(""); searchRef.current?.focus(); }}
-                  style={{
-                    background: "none", border: "none", cursor: "pointer",
-                    color: "var(--text-muted)", padding: "2px", display: "flex",
-                  }}
-                  aria-label="Clear search"
-                  title="Clear"
-                >
-                  <X size={14} />
-                </button>
-              </>
-            ) : (
-              <span style={{
-                fontSize: "10px", color: "var(--text-faint)",
-                border: "2px solid var(--border-default)", borderRadius: "0",
-                padding: "1px 5px", letterSpacing: "0.05em",
-              }}>
-                /
-              </span>
+            {q.keywords?.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "16px" }}>
+                {q.keywords.map(kw => (
+                  <span key={kw} style={tagStyle}>#{kw}</span>
+                ))}
+              </div>
             )}
           </div>
-          {/* SUGGESTIONS DROPDOWN */}
-          {suggestFocused && query.trim() && filtered.length > 0 && (() => {
-            const suggestions = filtered.slice(0, 8);
-            return (
-              <div
-                role="listbox"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  left: 0,
-                  right: 0,
-                  background: "var(--bg-surface)",
-                  border: "2px solid var(--border-default)",
-                  borderRadius: "0",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
-                  overflow: "hidden",
-                  zIndex: 30,
-                  maxHeight: "360px",
-                  overflowY: "auto",
-                }}
-              >
-                <div style={{
-                  padding: "6px 12px",
-                  fontSize: "10px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--text-muted)",
-                  borderBottom: "2px solid var(--border-subtle)",
-                  background: "var(--bg-inset)",
-                }}>
-                  {filtered.length} match{filtered.length === 1 ? "" : "es"} · ↑↓ to navigate · Enter to open
-                </div>
-                {suggestions.map((sq, i) => {
-                  const lvl = LEVELS[sq.level];
-                  const active = suggestIdx === i;
-                  return (
-                    <button
-                      key={sq.id}
-                      role="option"
-                      aria-selected={active}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setExpandedId(sq.id);
-                        setSuggestFocused(false);
-                        searchRef.current?.blur();
-                        setTimeout(() => {
-                          document.getElementById(`q-${sq.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-                        }, 50);
-                        trackEvent("suggestion_picked", { id: sq.id });
-                      }}
-                      onMouseEnter={() => setSuggestIdx(i)}
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: "10px",
-                        padding: "10px 12px",
-                        background: active ? "color-mix(in srgb, var(--accent-blue) 12%, transparent)" : "transparent",
-                        border: "none",
-                        borderLeft: `2px solid ${active ? lvl.color : "transparent"}`,
-                        cursor: "pointer",
-                        width: "100%",
-                        textAlign: "left",
-                        fontFamily: "inherit",
-                        borderBottom: "2px solid var(--border-subtle)",
-                      }}
-                    >
-                      <span style={{
-                        fontSize: "9px",
-                        fontWeight: 700,
-                        letterSpacing: "0.1em",
-                        color: lvl.color,
-                        padding: "2px 5px",
-                        border: `1px solid color-mix(in srgb, ${lvl.color} 40%, transparent)`,
-                        borderRadius: "0",
-                        background: `color-mix(in srgb, ${lvl.color} 10%, transparent)`,
-                        flexShrink: 0,
-                        marginTop: "1px",
-                      }}>{lvl.label}</span>
-                      <span style={{
-                        color: "var(--text-primary)",
-                        fontSize: "13px",
-                        lineHeight: 1.4,
-                        flex: 1,
-                        minWidth: 0,
-                      }}>
-                        {highlight(sq.q, query)}
-                      </span>
-                      <span style={{
-                        color: "var(--text-faint)",
-                        fontSize: "10px",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                        flexShrink: 0,
-                      }}>
-                        {TOPICS[sq.topic]}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* CONTROLS */}
-        <div style={{
-          background: "var(--bg-surface)",
-          border: "2px solid var(--border-default)",
-          borderRadius: "0",
-          padding: "12px 16px",
-          marginBottom: "20px",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "12px",
-          alignItems: "center",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--text-muted)", fontSize: "12px" }}>
-            <Filter size={14} />
-            <span style={{ textTransform: "uppercase", letterSpacing: "0.1em" }}>filter</span>
-          </div>
-
-          <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} style={selectStyle}>
-            <option value="all">all levels</option>
-            {Object.entries(LEVELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-
-          <select value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} style={selectStyle}>
-            <option value="all">all topics</option>
-            {Object.entries(TOPICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-
-          <label style={toggleLabelStyle}>
-            <input type="checkbox" checked={hideCompleted} onChange={(e) => setHideCompleted(e.target.checked)} />
-            hide done
-          </label>
-
-          <label style={{ ...toggleLabelStyle, color: blindMode ? "var(--accent-red)" : "var(--text-muted)" }}>
-            <input type="checkbox" checked={blindMode} onChange={(e) => setBlindMode(e.target.checked)} />
-            {blindMode ? <EyeOff size={14} /> : <Eye size={14} />} blind mode
-          </label>
-
-          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-            <User size={12} style={{ position: "absolute", left: "8px", color: "var(--text-muted)" }} />
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onBlur={(e) => commitUsername(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-              maxLength={64}
-              placeholder="your name (optional)"
-              aria-label="Your name"
-              style={{
-                ...selectStyle,
-                paddingLeft: "24px",
-                width: "170px",
-              }}
-            />
-          </div>
-
-          <div style={{ marginLeft: "auto", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            <button onClick={exportProgress} style={btnStyle} title="Export progress as JSON">
-              <Download size={12} /> export
-            </button>
-            <label style={{ ...btnStyle, cursor: "pointer" }} title="Import progress from JSON file">
-              <Upload size={12} /> import
-              <input type="file" accept="application/json" onChange={importProgress} style={{ display: "none" }} />
-            </label>
-            <button onClick={resetAll} style={{ ...btnStyle, color: "var(--accent-red)", borderColor: "color-mix(in srgb, var(--accent-red) 27%, transparent)" }}>
-              <RotateCcw size={12} /> reset
-            </button>
-          </div>
-        </div>
-
-        {/* ACTIVE TAG CHIP — dismissable */}
-        {!quiz && tagFilter && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            marginBottom: "12px", flexWrap: "wrap",
-          }}>
-            <span style={{
-              fontSize: "10px", textTransform: "uppercase",
-              letterSpacing: "0.1em", color: "var(--text-muted)",
-            }}>
-              tag filter:
-            </span>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: "6px",
-              fontSize: "11px", color: "var(--bg-app)",
-              background: "var(--accent-blue)",
-              padding: "3px 10px", borderRadius: "0",
-              fontWeight: 500,
-            }}>
-              #{tagFilter}
-              <button
-                onClick={() => setTagFilter(null)}
-                style={{
-                  background: "none", border: "none",
-                  color: "var(--bg-app)", cursor: "pointer",
-                  display: "flex", alignItems: "center",
-                  padding: 0, opacity: 0.8,
-                }}
-                aria-label="Clear tag filter"
-                title="Clear"
-              >
-                <X size={12} />
-              </button>
-            </span>
-            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              {filtered.length} match{filtered.length === 1 ? "" : "es"}
-            </span>
-          </div>
         )}
+      </main>
 
-        {/* RATING / BOOKMARK FILTER CHIPS */}
-        {!quiz && (() => {
-          const allIds = QUESTIONS.map((x) => x.id);
-          const counts = {
-            all: allIds.length,
-            bookmarked: allIds.filter((id) => bookmarked.has(id)).length,
-            hard: allIds.filter((id) => confidence[id] === "hard").length,
-            medium: allIds.filter((id) => confidence[id] === "medium").length,
-            easy: allIds.filter((id) => confidence[id] === "easy").length,
-            unrated: allIds.filter((id) => !confidence[id]).length,
-          };
-          const chipColor = {
-            all: "var(--text-muted)",
-            bookmarked: "var(--accent-amber)",
-            hard: "var(--accent-red)",
-            medium: "var(--accent-amber)",
-            easy: "var(--accent-green)",
-            unrated: "var(--text-muted)",
-          };
-          const chips = [
-            { k: "all", label: "all" },
-            { k: "bookmarked", label: "⚑ bookmarked" },
-            { k: "hard", label: "hard" },
-            { k: "medium", label: "medium" },
-            { k: "easy", label: "easy" },
-            { k: "unrated", label: "unrated" },
-          ];
-          return (
+      {/* FOOTER ACTION BAR */}
+      {revealed && (
+        <div style={{
+          position: "fixed",
+          bottom: 0, left: 0, right: 0,
+          background: "var(--bg-card)",
+          borderTop: "1px solid var(--bg-inset)",
+          padding: "16px 20px calc(16px + env(safe-area-inset-bottom))",
+          boxShadow: "0 -8px 24px rgba(40,50,90,0.06)",
+          zIndex: 20,
+        }} className="animate-slide-up">
+          <div style={{ maxWidth: "720px", margin: "0 auto" }}>
             <div style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "6px",
-              alignItems: "center",
-              marginBottom: "16px",
-            }}>
-              <span style={{
-                fontSize: "10px",
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: "var(--text-muted)",
-                marginRight: "4px",
-              }}>
-                rating:
-              </span>
-              {chips.map((c) => {
-                const n = counts[c.k];
-                const active = ratingFilter === c.k;
-                const col = chipColor[c.k];
-                const disabled = c.k !== "all" && n === 0;
-                return (
-                  <button
-                    key={c.k}
-                    disabled={disabled}
-                    onClick={() => {
-                      setRatingFilter(c.k);
-                      trackEvent("rating_filter", { value: c.k });
-                    }}
-                    style={{
-                      background: active ? `color-mix(in srgb, ${col} 15%, transparent)` : "transparent",
-                      border: active
-                        ? `1px solid color-mix(in srgb, ${col} 60%, transparent)`
-                        : "2px solid var(--border-default)",
-                      color: active ? col : disabled ? "var(--text-faint)" : "var(--text-muted)",
-                      padding: "4px 10px",
-                      borderRadius: "0",
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      opacity: disabled ? 0.5 : 1,
-                      fontFamily: "inherit",
-                      fontSize: "11px",
-                      fontWeight: 500,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      textTransform: "lowercase",
-                    }}
-                  >
-                    {c.label}
-                    <span style={{ fontSize: "10px", fontVariantNumeric: "tabular-nums", opacity: 0.7 }}>
-                      {n}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })()}
-
-        {/* QUESTIONS */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {filtered.length === 0 && (
-            <div style={{
-              padding: "60px 20px",
-              textAlign: "center",
-              color: "var(--text-muted)",
-              background: "var(--bg-surface)",
-              border: "1px dashed var(--border-default)",
-              borderRadius: "0",
-            }}>
-              <div style={{ fontSize: "32px", marginBottom: "8px" }}>∅</div>
-              No questions match these filters.
-            </div>
-          )}
-
-          {filtered.map((q, idx) => {
-            const prevLevel = idx > 0 ? filtered[idx - 1].level : null;
-            const isNewLevelGroup = q.level !== prevLevel;
-            const lvl = LEVELS[q.level];
-            const isCollapsed = collapsedLevels.has(q.level);
-            // Count items in this level group
-            const levelItems = filtered.filter((x) => x.level === q.level);
-            const levelDone = levelItems.filter((x) => completed.has(x.id)).length;
-            const toggleLevelCollapse = () => {
-              setCollapsedLevels((prev) => {
-                const next = new Set(prev);
-                if (next.has(q.level)) next.delete(q.level);
-                else next.add(q.level);
-                return next;
-              });
-            };
-            return (
-              <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {isNewLevelGroup && (
-                  <button
-                    onClick={toggleLevelCollapse}
-                    style={{
-                      marginTop: idx === 0 ? 0 : "24px",
-                      padding: "14px 18px",
-                      background: lvl.color,
-                      border: `2px solid var(--border-default)`,
-                      borderLeft: `12px solid var(--border-default)`,
-                      borderRadius: "0",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "14px",
-                      flexWrap: "wrap",
-                      cursor: "pointer",
-                      width: "100%",
-                      textAlign: "left",
-                      fontFamily: "inherit",
-                      color: "#0a0a0a",
-                      textTransform: "none",
-                      letterSpacing: "0",
-                      transition: "transform 60ms steps(1)",
-                    }}
-                    aria-expanded={!isCollapsed}
-                    title={isCollapsed ? `Expand ${lvl.label}` : `Collapse ${lvl.label}`}
-                  >
-                    <span style={{
-                      display: "flex",
-                      alignItems: "center",
-                      color: "#0a0a0a",
-                      flexShrink: 0,
-                    }}>
-                      {isCollapsed ? <ChevronRight size={20} strokeWidth={3} /> : <ChevronDown size={20} strokeWidth={3} />}
-                    </span>
-                    <span style={{
-                      color: "#0a0a0a",
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      fontSize: "22px",
-                      fontWeight: 700,
-                      letterSpacing: "-0.01em",
-                      textTransform: "uppercase",
-                    }}>
-                      {lvl.label}
-                    </span>
-                    <span style={{
-                      color: "#0a0a0a",
-                      fontSize: "11px",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.1em",
-                      fontWeight: 700,
-                      fontFamily: "'JetBrains Mono', monospace",
-                      opacity: 0.75,
-                    }}>
-                      {levelItems.length} Q · {levelDone}/{levelItems.length} DONE
-                      {isCollapsed && " · HIDDEN"}
-                    </span>
-                    <div style={{
-                      flex: 1,
-                      minWidth: "100px",
-                      height: "10px",
-                      background: "rgba(10,10,10,0.2)",
-                      border: "2px solid #0a0a0a",
-                      borderRadius: "0",
-                      overflow: "hidden",
-                      marginLeft: "auto",
-                    }}>
-                      <div style={{
-                        width: `${levelItems.length ? (levelDone / levelItems.length) * 100 : 0}%`,
-                        height: "100%",
-                        background: "#0a0a0a",
-                        transition: "width 0.2s",
-                      }} />
-                    </div>
-                  </button>
-                )}
-                {!isCollapsed && (
-                  <QuestionCard
-                    q={q}
-                    idx={idx}
-                    isDone={completed.has(q.id)}
-                    isBookmarked={bookmarked.has(q.id)}
-                    isExpanded={expandedId === q.id}
-                    isRevealed={revealed.has(q.id)}
-                    conf={confidence[q.id]}
-                    blindMode={blindMode}
-                    searchQuery={query}
-                    activeTag={tagFilter}
-                    onPickTag={(kw) => {
-                      setTagFilter((cur) => (cur && cur.toLowerCase() === kw.toLowerCase() ? null : kw));
-                      trackEvent("tag_picked", { tag: kw });
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }}
-                    onToggleExpand={() => setExpandedId(expandedId === q.id ? null : q.id)}
-                    onToggleComplete={(e) => toggleComplete(q.id, e?.shiftKey)}
-                    onToggleBookmark={() => toggleBookmark(q.id)}
-                    onToggleReveal={() => toggleReveal(q.id)}
-                    onSetConf={(c) => setConf(q.id, c)}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* FINAL TIPS */}
-        <div className="brut-shadow" style={{
-          marginTop: "40px",
-          padding: "24px 28px",
-          background: "var(--bg-surface)",
-          border: "3px solid var(--border-default)",
-          borderLeft: "8px solid var(--accent-red)",
-          borderRadius: "0",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-            <Target size={16} color="var(--accent-red)" />
-            <span style={{ color: "var(--accent-red)", fontWeight: 700, letterSpacing: "0.1em", fontSize: "13px" }}>
-              FINAL PRE-INTERVIEW CHECKLIST
-            </span>
-          </div>
-          <ul style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: 1.8, margin: 0, paddingLeft: "20px" }}>
-            <li>Be ready to draw the request path on a whiteboard — browser → DNS → CDN → LB → app → DB, with where caches/auth/CORS fit in.</li>
-            <li>For any answer, end with <strong style={{ color: "var(--accent-green)" }}>trade-offs</strong>. "It depends" is fine if you explain what it depends on.</li>
-            <li>Security: know the OWASP top hits cold — XSS, CSRF, SQLi, IDOR, SSRF, broken auth. One real example for each.</li>
-            <li>Auth: be able to compare sessions vs JWT vs OAuth in 60 seconds, and name one failure mode of each in production.</li>
-            <li>Front-end: know the render pipeline (parse → DOM → layout → paint → composite) and where Virtual DOM fits. Explain event delegation and the event loop.</li>
-            <li>If you don't know — say "I don't know, but I'd start by…" and reason out loud. Interviewers love that.</li>
-            <li>Questions for them: what's your auth story? how do you handle migrations? SSR or SPA? how do you ship to prod?</li>
-            <li style={{ color: "var(--accent-red)" }}>Sleep. Don't cram for 12 hours. 7h of sleep &gt; 2 more questions memorized.</li>
-          </ul>
-        </div>
-        </>}
-
-        <footer style={{
-          marginTop: "40px",
-          padding: "20px 24px",
-          border: "2px solid var(--border-default)",
-          borderTop: "8px solid var(--border-default)",
-          color: "var(--text-muted)",
-          fontSize: "11px",
-          textAlign: "center",
-          fontFamily: "'JetBrains Mono', monospace",
-          background: "var(--bg-surface)",
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
-          fontWeight: 600,
-        }}>
-          {QUESTIONS.length} QUESTIONS · {Object.keys(LEVELS).length} LEVELS · {Object.keys(TOPICS).length} TOPICS
-          <br />
-          <span style={{
-            display: "inline-block",
-            width: "8px", height: "8px",
-            background: "var(--brand)",
-            marginRight: "6px",
-            verticalAlign: "middle",
-          }} /> CREATED BY{" "}
-          <span style={{ color: "var(--text-primary)" }}>ANDREI</span> ·{" "}
-          <a
-            href="https://t.me/Suslicke"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              color: "var(--bg-app)",
-              background: "var(--brand)",
-              padding: "2px 8px",
-              textDecoration: "none",
+              fontSize: "12px",
               fontWeight: 700,
-            }}
-          >
-            @SUSLICKE
-          </a>
-        </footer>
-      </div>
-
-      {/* ============== CONSENT BANNER ============== */}
-      {consent === "pending" && (
-        <div
-          role="dialog"
-          aria-label="Cookie consent"
-          aria-live="polite"
-          style={{
-            position: "fixed",
-            bottom: "16px",
-            left: "16px",
-            right: "16px",
-            maxWidth: "560px",
-            margin: "0 auto",
-            background: "var(--bg-surface)",
-            border: "2px solid var(--border-default)",
-            borderLeft: "3px solid var(--accent-blue)",
-            borderRadius: "0",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
-            padding: "14px 16px",
-            zIndex: 50,
-            display: "flex",
-            gap: "12px",
-            alignItems: "flex-start",
-          }}
-        >
-          <div style={{
-            flexShrink: 0,
-            width: "32px",
-            height: "32px",
-            borderRadius: "0",
-            background: "color-mix(in srgb, var(--accent-blue) 12%, transparent)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--accent-blue)",
-          }}>
-            <Cookie size={16} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
-              We use cookies
+              color: "var(--text-muted)",
+              textAlign: "center",
+              marginBottom: "10px",
+              letterSpacing: "0.02em",
+            }}>
+              How well did you know it?
             </div>
-            <div style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.6, marginBottom: "10px" }}>
-              Google Analytics tracks how this guide is used — searches, progress, and general device info. If you set a name, it's attached so you can see your own stats. No ads. You can change your mind later.
-            </div>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <button
-                onClick={() => updateConsent("granted")}
-                style={{
-                  background: "var(--accent-blue)",
-                  color: "var(--bg-app)",
-                  border: "1px solid var(--accent-blue)",
-                  padding: "5px 12px",
-                  borderRadius: "0",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Accept
-              </button>
-              <button
-                onClick={() => updateConsent("denied")}
-                style={{
-                  background: "transparent",
-                  color: "var(--text-muted)",
-                  border: "2px solid var(--border-default)",
-                  padding: "5px 12px",
-                  borderRadius: "0",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: "11px",
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Reject
-              </button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+              <RatingButton rating="hard"   label="Hard"   shortcut="1" emoji="😴" onClick={() => onAnswer("hard")} />
+              <RatingButton rating="medium" label="Medium" shortcut="2" emoji="🤔" onClick={() => onAnswer("medium")} />
+              <RatingButton rating="easy"   label="Easy"   shortcut="3" emoji="😎" onClick={() => onAnswer("easy")} />
             </div>
           </div>
         </div>
@@ -1514,388 +935,592 @@ export default function App() {
   );
 }
 
-// ============== HIGHLIGHT HELPER ==============
-// Case-insensitive substring highlight. Uses indexOf (no regex) so user
-// input never needs escaping. Preserves original casing.
-function highlight(text, needle) {
-  const n = (needle || "").trim();
-  if (!n) return text;
-  const lower = text.toLowerCase();
-  const low = n.toLowerCase();
-  const parts = [];
-  let i = 0;
-  let key = 0;
-  while (i < text.length) {
-    const hit = lower.indexOf(low, i);
-    if (hit === -1) { parts.push(text.slice(i)); break; }
-    if (hit > i) parts.push(text.slice(i, hit));
-    parts.push(
-      <mark
-        key={key++}
-        className="search-hit"
-        style={{ background: "color-mix(in srgb, var(--accent-blue) 28%, transparent)", color: "inherit", padding: "0 2px", borderRadius: "0" }}
-      >
-        {text.slice(hit, hit + n.length)}
-      </mark>
-    );
-    i = hit + n.length;
-  }
-  return parts;
+function Chip({ children, color }) {
+  return (
+    <span style={{
+      fontSize: "11px",
+      fontWeight: 700,
+      letterSpacing: "0.04em",
+      textTransform: "uppercase",
+      padding: "5px 10px",
+      borderRadius: "var(--radius-pill)",
+      background: `${color}22`,
+      color: color,
+    }}>
+      {children}
+    </span>
+  );
 }
 
-// ============== QUESTION CARD ==============
-function QuestionCard({
-  q, idx, isDone, isBookmarked, isExpanded, isRevealed, conf, blindMode,
-  onToggleExpand, onToggleComplete, onToggleBookmark, onToggleReveal, onSetConf,
-  searchQuery, activeTag, onPickTag,
-}) {
-  const lvl = LEVELS[q.level];
-  const showAnswer = !blindMode || isRevealed;
+const tagStyle = {
+  fontSize: "11px",
+  fontWeight: 600,
+  color: "var(--text-muted)",
+  background: "var(--bg-soft)",
+  padding: "4px 10px",
+  borderRadius: "var(--radius-pill)",
+};
+
+const primaryBtnStyle = {
+  background: "var(--brand)",
+  color: "#fff",
+  padding: "14px 28px",
+  borderRadius: "var(--radius-pill)",
+  fontSize: "15px",
+  fontWeight: 700,
+  boxShadow: "var(--shadow-brand)",
+  display: "inline-flex",
+  alignItems: "center",
+};
+
+function RatingButton({ rating, label, shortcut, emoji, onClick }) {
+  const colorMap = {
+    hard:   { bg: "var(--danger-soft)",   fg: "var(--danger)" },
+    medium: { bg: "var(--warning-soft)", fg: "var(--warning)" },
+    easy:   { bg: "var(--success-soft)", fg: "var(--success)" },
+  };
+  const { bg, fg } = colorMap[rating];
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: bg,
+        color: fg,
+        padding: "16px 8px",
+        borderRadius: "var(--radius-lg)",
+        fontSize: "14px",
+        fontWeight: 700,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "4px",
+        transition: "transform 100ms",
+      }}
+      onMouseDown={(e) => e.currentTarget.style.transform = "scale(0.96)"}
+      onMouseUp={(e) => e.currentTarget.style.transform = ""}
+      onMouseLeave={(e) => e.currentTarget.style.transform = ""}
+    >
+      <span style={{ fontSize: "22px", lineHeight: 1 }}>{emoji}</span>
+      <span>{label}</span>
+      <span style={{
+        fontSize: "10px", opacity: 0.65, fontWeight: 600,
+        background: "rgba(0,0,0,0.06)", padding: "1px 6px", borderRadius: "4px",
+      }}>{shortcut}</span>
+    </button>
+  );
+}
+
+// ============== DONE SCREEN ==============
+
+function DoneScreen({ study, onExit }) {
+  const total = study.ids.length;
+  const { easy, medium, hard } = study.results;
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "var(--bg-app)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+      position: "relative",
+      overflow: "hidden",
+    }}>
+      <ConfettiBurst />
+
+      <div className="animate-pop" style={{
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-xl)",
+        padding: "40px 32px",
+        boxShadow: "var(--shadow-lg)",
+        maxWidth: "440px",
+        width: "100%",
+        textAlign: "center",
+        position: "relative",
+        zIndex: 2,
+      }}>
+        <div style={{
+          width: "84px", height: "84px",
+          background: "linear-gradient(135deg, #ffd142, #ff9442)",
+          borderRadius: "50%",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          marginBottom: "20px",
+          boxShadow: "0 12px 32px rgba(255, 148, 66, 0.45)",
+        }}>
+          <Trophy size={42} color="#fff" />
+        </div>
+
+        <h1 style={{
+          fontSize: "28px",
+          fontWeight: 800,
+          letterSpacing: "-0.02em",
+          margin: "0 0 6px",
+          color: "var(--text-primary)",
+        }}>
+          Session complete!
+        </h1>
+        <div style={{ color: "var(--text-muted)", fontSize: "14px", marginBottom: "28px" }}>
+          You went through {total} question{total === 1 ? "" : "s"}.
+        </div>
+
+        <div style={{
+          background: "linear-gradient(135deg, #5765f2 0%, #8b5cf6 100%)",
+          borderRadius: "var(--radius-lg)",
+          padding: "20px",
+          color: "#fff",
+          marginBottom: "20px",
+          boxShadow: "var(--shadow-brand)",
+        }}>
+          <div style={{ fontSize: "12px", opacity: 0.85, fontWeight: 600, marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>XP earned</div>
+          <div style={{ fontSize: "44px", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1 }}>
+            +{study.sessionXp}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "28px" }}>
+          <ResultCell value={easy}   label="Easy"   color="var(--success)" bg="var(--success-soft)" />
+          <ResultCell value={medium} label="Medium" color="var(--warning)" bg="var(--warning-soft)" />
+          <ResultCell value={hard}   label="Hard"   color="var(--danger)"  bg="var(--danger-soft)" />
+        </div>
+
+        <button
+          onClick={onExit}
+          style={{
+            ...primaryBtnStyle,
+            width: "100%",
+            justifyContent: "center",
+          }}
+        >
+          <Check size={18} style={{ marginRight: "8px" }} /> Back to home
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResultCell({ value, label, color, bg }) {
+  return (
+    <div style={{
+      background: bg,
+      borderRadius: "var(--radius-md)",
+      padding: "12px 8px",
+    }}>
+      <div style={{ fontSize: "24px", fontWeight: 800, color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: "11px", color, fontWeight: 600, marginTop: "4px", opacity: 0.85 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function ConfettiBurst() {
+  // Render 32 lightweight confetti dots that fall.
+  const colors = ["#5765f2", "#34c77b", "#f7b955", "#f86464", "#8b5cf6", "#4dbfff"];
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }} aria-hidden="true">
+      {Array.from({ length: 32 }).map((_, i) => {
+        const left = (i * 3.125) + Math.random() * 3;
+        const delay = Math.random() * 0.6;
+        const dur = 2.4 + Math.random() * 1.6;
+        const color = colors[i % colors.length];
+        const size = 6 + Math.random() * 6;
+        return (
+          <span key={i} style={{
+            position: "absolute",
+            top: "-20px",
+            left: `${left}%`,
+            width: `${size}px`,
+            height: `${size}px`,
+            background: color,
+            borderRadius: i % 2 ? "2px" : "50%",
+            animation: `confetti ${dur}s ${delay}s ease-in forwards`,
+          }} />
+        );
+      })}
+    </div>
+  );
+}
+
+// ============== STATS SCREEN ==============
+
+function StatsScreen({ stats, xp, streak, bookmarked }) {
+  return (
+    <div className="animate-fade">
+      {/* HEADER STATS */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "20px" }}>
+        <BigStatCard
+          icon={<Sparkles size={20} color="#f7b955" fill="#f7b955" />}
+          value={xp}
+          label="Total XP"
+          gradient="linear-gradient(135deg, #ffd142 0%, #ff9442 100%)"
+        />
+        <BigStatCard
+          icon={<Flame size={20} color="#fff" fill="#fff" />}
+          value={streak}
+          label="Day streak"
+          gradient="linear-gradient(135deg, #ff7a4d 0%, #f86464 100%)"
+        />
+      </div>
+
+      {/* PROGRESS RING */}
+      <div style={{
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-xl)",
+        padding: "28px 20px",
+        boxShadow: "var(--shadow-sm)",
+        marginBottom: "20px",
+        textAlign: "center",
+      }}>
+        <ProgressRing value={stats.done} max={stats.total} />
+        <div style={{ fontSize: "14px", color: "var(--text-muted)", marginTop: "12px", fontWeight: 600 }}>
+          {stats.done} of {stats.total} questions reviewed
+        </div>
+      </div>
+
+      {/* LEVEL BREAKDOWN */}
+      <SectionTitle>By level</SectionTitle>
+      <div style={{ display: "grid", gap: "8px", marginBottom: "20px" }}>
+        {Object.entries(LEVELS).map(([k, lvl]) => {
+          const s = stats.byLevel[k];
+          const pct = s.total ? (s.done / s.total) * 100 : 0;
+          return (
+            <div key={k} style={{
+              background: "var(--bg-card)",
+              borderRadius: "var(--radius-md)",
+              padding: "12px 16px",
+              boxShadow: "var(--shadow-sm)",
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}>
+              <div style={{
+                width: "10px", height: "10px",
+                borderRadius: "50%",
+                background: `var(--level-${k})`,
+              }} />
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)", flex: 1 }}>
+                {lvl.label}
+              </div>
+              <div style={{ flex: 2, height: "6px", background: "var(--bg-inset)", borderRadius: "var(--radius-pill)", overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: `var(--level-${k})`, borderRadius: "var(--radius-pill)", transition: "width 320ms" }} />
+              </div>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", minWidth: "44px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                {s.done}/{s.total}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* CONFIDENCE BREAKDOWN */}
+      <SectionTitle>Mastery</SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+        <MasteryCard count={stats.conf.easy}   label="Easy"   icon="😎" color="var(--success)" bg="var(--success-soft)" />
+        <MasteryCard count={stats.conf.medium} label="Medium" icon="🤔" color="var(--warning)" bg="var(--warning-soft)" />
+        <MasteryCard count={stats.conf.hard}   label="Hard"   icon="😴" color="var(--danger)"  bg="var(--danger-soft)" />
+      </div>
+
+      {bookmarked.size > 0 && (
+        <>
+          <SectionTitle>Bookmarks</SectionTitle>
+          <div style={{
+            background: "var(--bg-card)",
+            borderRadius: "var(--radius-md)",
+            padding: "16px 18px",
+            boxShadow: "var(--shadow-sm)",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}>
+            <Star size={20} color="#f7b955" fill="#f7b955" />
+            <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
+              {bookmarked.size} questions saved for later
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BigStatCard({ icon, value, label, gradient }) {
+  return (
+    <div style={{
+      background: gradient,
+      color: "#fff",
+      borderRadius: "var(--radius-lg)",
+      padding: "18px",
+      boxShadow: "var(--shadow-md)",
+    }}>
+      <div style={{ marginBottom: "10px" }}>{icon}</div>
+      <div style={{ fontSize: "32px", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: "12px", marginTop: "4px", opacity: 0.9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function MasteryCard({ count, label, icon, color, bg }) {
+  return (
+    <div style={{
+      background: bg,
+      borderRadius: "var(--radius-lg)",
+      padding: "16px 12px",
+      textAlign: "center",
+    }}>
+      <div style={{ fontSize: "26px", marginBottom: "6px" }}>{icon}</div>
+      <div style={{ fontSize: "22px", fontWeight: 800, color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{count}</div>
+      <div style={{ fontSize: "11px", fontWeight: 600, color, marginTop: "4px", opacity: 0.85 }}>{label}</div>
+    </div>
+  );
+}
+
+function ProgressRing({ value, max }) {
+  const pct = max ? (value / max) * 100 : 0;
+  const r = 56;
+  const c = 2 * Math.PI * r;
+  return (
+    <div style={{ position: "relative", width: "140px", height: "140px", margin: "0 auto" }}>
+      <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx="70" cy="70" r={r} fill="none" stroke="var(--bg-inset)" strokeWidth="10" />
+        <circle
+          cx="70" cy="70" r={r}
+          fill="none"
+          stroke="url(#ringGradient)"
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c - (pct / 100) * c}
+          style={{ transition: "stroke-dashoffset 480ms" }}
+        />
+        <defs>
+          <linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#5765f2" />
+            <stop offset="100%" stopColor="#8b5cf6" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      }}>
+        <div style={{ fontSize: "32px", fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.03em", lineHeight: 1 }}>
+          {Math.round(pct)}%
+        </div>
+        <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Overall
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== SETTINGS SCREEN ==============
+
+function SettingsScreen({ theme, onThemeChange, onResetProgress }) {
+  return (
+    <div className="animate-fade">
+      <SectionTitle>Appearance</SectionTitle>
+      <div style={{
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-lg)",
+        padding: "6px",
+        boxShadow: "var(--shadow-sm)",
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "4px",
+        marginBottom: "20px",
+      }}>
+        {[
+          { k: "light", label: "Light", Icon: Sun },
+          { k: "dark",  label: "Dark",  Icon: Moon },
+        ].map(({ k, label, Icon }) => {
+          const active = theme === k;
+          return (
+            <button
+              key={k}
+              onClick={() => onThemeChange(k)}
+              style={{
+                padding: "12px",
+                borderRadius: "var(--radius-md)",
+                background: active ? "var(--brand)" : "transparent",
+                color: active ? "#fff" : "var(--text-secondary)",
+                fontWeight: 700,
+                fontSize: "13px",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                transition: "background 160ms, color 160ms",
+              }}
+            >
+              <Icon size={16} /> {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <SectionTitle>About</SectionTitle>
+      <div style={{
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-lg)",
+        padding: "20px",
+        boxShadow: "var(--shadow-sm)",
+        marginBottom: "20px",
+        fontSize: "13px",
+        color: "var(--text-secondary)",
+        lineHeight: 1.65,
+      }}>
+        <strong style={{ color: "var(--text-primary)" }}>web.drill</strong> is an interview prep app for full-stack web developers. It covers HTTP, REST, auth, CORS, security (OWASP), Django, FastAPI, JS, DOM, React, Vue, performance, and deployment — from trainee to lead.
+        <div style={{ marginTop: "10px", color: "var(--text-muted)", fontSize: "12px" }}>
+          Built by <a href="https://t.me/Suslicke" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 700, textDecoration: "none" }}>@Suslicke</a> · v2.0
+        </div>
+      </div>
+
+      <SectionTitle>Danger zone</SectionTitle>
+      <button
+        onClick={onResetProgress}
+        style={{
+          background: "var(--danger-soft)",
+          color: "var(--danger)",
+          padding: "14px 20px",
+          borderRadius: "var(--radius-lg)",
+          fontWeight: 700,
+          fontSize: "13px",
+          width: "100%",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+        }}
+      >
+        <RotateCcw size={16} /> Reset all progress
+      </button>
+    </div>
+  );
+}
+
+// ============== SEARCH OVERLAY ==============
+
+function SearchOverlay({ query, onQueryChange, onClose, onPick }) {
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const results = useMemo(() => {
+    const n = query.trim().toLowerCase();
+    if (!n) return [];
+    return QUESTIONS
+      .filter(q => `${q.q} ${q.a} ${(q.keywords || []).join(" ")}`.toLowerCase().includes(n))
+      .slice(0, 20);
+  }, [query]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   return (
     <div
-      id={`q-${q.id}`}
-      className="card-enter"
+      onClick={onClose}
       style={{
-        background: "var(--bg-surface)",
-        border: `2px solid ${isExpanded ? lvl.color : "var(--border-default)"}`,
-        borderLeft: `8px solid ${lvl.color}`,
-        borderRadius: "0",
-        scrollMarginTop: "80px",
-        overflow: "hidden",
-        opacity: isDone ? 0.55 : 1,
-        transition: "border-color 60ms steps(1)",
-        boxShadow: isExpanded ? `4px 4px 0 ${lvl.color}` : "none",
+        position: "fixed", inset: 0,
+        background: "rgba(15, 18, 32, 0.55)",
+        backdropFilter: "blur(8px)",
+        zIndex: 50,
+        padding: "20px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
       }}
     >
       <div
-        onClick={onToggleExpand}
+        onClick={(e) => e.stopPropagation()}
+        className="animate-slide-up"
         style={{
-          padding: "14px 16px",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "12px",
-          userSelect: "none",
+          background: "var(--bg-card)",
+          borderRadius: "var(--radius-lg)",
+          width: "100%",
+          maxWidth: "560px",
+          marginTop: "60px",
+          overflow: "hidden",
+          boxShadow: "var(--shadow-lg)",
         }}
       >
-        <div style={{ color: "var(--text-muted)", fontSize: "11px", paddingTop: "3px", fontVariantNumeric: "tabular-nums", minWidth: "32px" }}>
-          #{String(idx + 1).padStart(3, "0")}
+        <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: "10px", borderBottom: "1px solid var(--bg-inset)" }}>
+          <Search size={18} color="var(--text-muted)" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder="Search questions, answers, keywords..."
+            style={{
+              flex: 1,
+              fontSize: "15px",
+              fontWeight: 500,
+              color: "var(--text-primary)",
+              padding: "8px 0",
+            }}
+          />
+          <button onClick={onClose} style={{ ...iconBtnStyle, width: "30px", height: "30px" }} aria-label="Close">
+            <X size={16} />
+          </button>
         </div>
-
-        <button
-          onClick={(e) => { e.stopPropagation(); onToggleComplete(e); }}
-          title={isDone ? "Mark as not done (Shift+click for range)" : "Mark as done (Shift+click for range)"}
-          style={{
-            background: isDone ? lvl.color : "transparent",
-            border: `1.5px solid ${isDone ? lvl.color : "var(--text-faint)"}`,
-            borderRadius: "0",
-            width: "18px", height: "18px",
-            cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            padding: 0,
-            marginTop: "2px",
-            flexShrink: 0,
-          }}
-          aria-label={isDone ? "Mark as not done" : "Mark as done"}
-        >
-          {isDone && <Check size={12} color="var(--bg-app)" strokeWidth={3} />}
-        </button>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center", marginBottom: "6px" }}>
-            <span style={{
-              fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em",
-              color: lvl.color, padding: "2px 6px",
-              border: `1px solid ${lvl.color}55`,
-              borderRadius: "0",
-              background: `${lvl.color}15`,
-            }}>{lvl.label}</span>
-            <span style={{
-              fontSize: "10px", color: "var(--text-muted)",
-              padding: "2px 6px",
-              border: "2px solid var(--border-default)",
-              borderRadius: "0",
-            }}>{TOPICS[q.topic]}</span>
-            {q.level === "tricky" && (
-              <span style={{ fontSize: "10px", color: "var(--accent-red)", display: "flex", alignItems: "center", gap: "3px" }}>
-                <Zap size={10} /> gotcha
-              </span>
-            )}
-            {conf && (
-              <span style={{
-                fontSize: "10px",
-                color: conf === "easy" ? "var(--accent-green)" : conf === "medium" ? "var(--accent-amber)" : "var(--accent-red)",
-                padding: "2px 6px",
-                borderRadius: "0",
-                background: "var(--bg-app)",
-              }}>{conf}</span>
-            )}
-          </div>
-          <div style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontSize: "15px",
-            fontWeight: 500,
-            color: "var(--text-primary)",
-            lineHeight: 1.45,
-            textDecoration: isDone ? "line-through" : "none",
-            textDecorationColor: "var(--text-faint)",
-          }}>
-            {highlight(q.q, searchQuery)}
-          </div>
-        </div>
-
-        <button
-          onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }}
-          style={{
-            background: "none", border: "none",
-            color: isBookmarked ? "var(--accent-amber)" : "var(--text-faint)",
-            cursor: "pointer", padding: "2px",
-            fontSize: "18px",
-            lineHeight: 1,
-          }}
-          title="bookmark"
-          aria-label={isBookmarked ? "Remove bookmark" : "Bookmark"}
-        >
-          ⚑
-        </button>
-
-        <div style={{ color: "var(--text-muted)", paddingTop: "4px" }}>
-          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div style={{ padding: "0 16px 16px 62px", borderTop: "2px solid var(--border-subtle)" }}>
-          {!showAnswer ? (
-            <div style={{ padding: "24px 0", textAlign: "center" }}>
-              <div style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "12px" }}>
-                💭 Think about your answer first, then reveal.
-              </div>
-              <button
-                onClick={onToggleReveal}
-                style={{
-                  background: "transparent",
-                  border: `1px solid ${lvl.color}`,
-                  color: lvl.color,
-                  padding: "8px 20px",
-                  borderRadius: "0",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                }}
-              >
-                reveal answer
-              </button>
+        <div className="hide-scrollbar" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+          {query.trim() && results.length === 0 && (
+            <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)", fontSize: "14px" }}>
+              No matches for "{query}"
             </div>
-          ) : (
-            <>
-              <div style={{
-                whiteSpace: "pre-wrap",
-                fontSize: "13.5px",
-                lineHeight: 1.75,
-                color: "var(--text-secondary)",
-                padding: "12px 0",
-              }}>
-                {highlight(q.a, searchQuery)}
-              </div>
-
-              {q.keywords && (
-                <div style={{
-                  display: "flex", flexWrap: "wrap", gap: "6px",
-                  marginTop: "10px", paddingTop: "10px",
-                  borderTop: "1px dashed var(--border-default)",
-                }}>
-                  {q.keywords.map((kw) => {
-                    const isActive = activeTag && activeTag.toLowerCase() === kw.toLowerCase();
-                    return (
-                      <button
-                        key={kw}
-                        onClick={(e) => { e.stopPropagation(); onPickTag(kw); }}
-                        title={isActive ? `Filtering by #${kw} — click to clear` : `Filter by #${kw}`}
-                        style={{
-                          fontSize: "10px",
-                          color: isActive ? "var(--bg-app)" : "var(--accent-blue)",
-                          background: isActive ? "var(--accent-blue)" : "var(--bg-app)",
-                          border: "1px solid color-mix(in srgb, var(--accent-blue) 40%, transparent)",
-                          borderRadius: "0",
-                          padding: "2px 8px",
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          fontWeight: 500,
-                        }}
-                      >
-                        #{kw}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div style={{
-                marginTop: "14px",
-                paddingTop: "14px",
-                borderTop: "2px solid var(--border-subtle)",
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                flexWrap: "wrap",
-              }}>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                  how did it go?
-                </span>
-                {["easy", "medium", "hard"].map((c) => {
-                  const cColor = c === "easy" ? "var(--accent-green)" : c === "medium" ? "var(--accent-amber)" : "var(--accent-red)";
-                  const active = conf === c;
-                  return (
-                    <button
-                      key={c}
-                      onClick={() => onSetConf(c)}
-                      style={{
-                        background: active ? cColor + "20" : "transparent",
-                        border: `1px solid ${active ? cColor : "var(--border-default)"}`,
-                        color: active ? cColor : "var(--text-muted)",
-                        padding: "4px 12px",
-                        borderRadius: "0",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        fontSize: "11px",
-                        fontWeight: 500,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      {c}
-                    </button>
-                  );
-                })}
-                {blindMode && (
-                  <button
-                    onClick={onToggleReveal}
-                    style={{
-                      marginLeft: "auto",
-                      background: "transparent",
-                      border: "none",
-                      color: "var(--text-muted)",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      fontSize: "11px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                  >
-                    <EyeOff size={12} /> hide again
-                  </button>
-                )}
-              </div>
-            </>
           )}
+          {!query.trim() && (
+            <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)", fontSize: "14px" }}>
+              Start typing to search {QUESTIONS.length} questions
+            </div>
+          )}
+          {results.map(q => {
+            const lvl = LEVELS[q.level];
+            const Icon = TOPIC_ICONS[q.topic] || Globe;
+            const hue = TOPIC_HUES[q.topic] || "#5765f2";
+            return (
+              <button
+                key={q.id}
+                onClick={() => onPick(q)}
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  textAlign: "left",
+                  borderBottom: "1px solid var(--bg-inset)",
+                  background: "transparent",
+                  transition: "background 120ms",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-soft)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+              >
+                <div style={{
+                  width: "32px", height: "32px",
+                  borderRadius: "10px",
+                  background: `${hue}22`,
+                  color: hue,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  <Icon size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 600, lineHeight: 1.3, marginBottom: "2px" }}>
+                    {q.q}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 500 }}>
+                    {lvl.label} · {TOPICS[q.topic]}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
-      )}
-    </div>
-  );
-}
-
-// ============== HELPERS ==============
-const selectStyle = {
-  background: "var(--bg-app)",
-  color: "var(--text-primary)",
-  border: "2px solid var(--border-default)",
-  borderRadius: "0",
-  padding: "7px 10px",
-  fontFamily: "'JetBrains Mono', monospace",
-  fontSize: "11px",
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
-  cursor: "pointer",
-};
-
-const toggleLabelStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-  color: "var(--text-secondary)",
-  fontSize: "11px",
-  fontFamily: "'JetBrains Mono', monospace",
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
-  cursor: "pointer",
-  userSelect: "none",
-  padding: "6px 10px",
-  border: "2px solid var(--border-default)",
-  background: "var(--bg-app)",
-};
-
-const btnStyle = {
-  background: "var(--bg-app)",
-  border: "2px solid var(--border-default)",
-  color: "var(--text-primary)",
-  padding: "7px 12px",
-  borderRadius: "0",
-  cursor: "pointer",
-  fontFamily: "'JetBrains Mono', monospace",
-  fontSize: "11px",
-  fontWeight: 700,
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-};
-
-function StatCard({ label, value, accent, sub, icon }) {
-  return (
-    <div style={{
-      background: "var(--bg-surface)",
-      border: "2px solid var(--border-default)",
-      borderTop: `8px solid ${accent}`,
-      borderRadius: "0",
-      padding: "16px 18px",
-      boxShadow: `4px 4px 0 ${accent}`,
-    }}>
-      <div style={{
-        fontSize: "10px",
-        color: "var(--text-muted)",
-        textTransform: "uppercase",
-        letterSpacing: "0.15em",
-        marginBottom: "10px",
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        fontWeight: 700,
-        fontFamily: "'JetBrains Mono', monospace",
-      }}>
-        {icon}{label}
       </div>
-      <div style={{
-        fontFamily: "'Space Grotesk', sans-serif",
-        fontSize: "44px",
-        fontWeight: 700,
-        color: "var(--text-primary)",
-        lineHeight: 0.9,
-        fontVariantNumeric: "tabular-nums",
-        letterSpacing: "-0.04em",
-      }}>
-        {value}
-      </div>
-      {sub && (
-        <div style={{
-          fontSize: "10px",
-          color: "var(--text-muted)",
-          marginTop: "8px",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-          fontWeight: 600,
-        }}>
-          {sub}
-        </div>
-      )}
     </div>
   );
 }
